@@ -1726,9 +1726,11 @@ function Section:_buildDropdown(opts, multi)
 	})
 	corner(listFrame, RADIUS_SMALL)
 	stroke(listFrame, self._theme.Border, 1)
-	create("UIListLayout", { Parent = listFrame, SortOrder = Enum.SortOrder.LayoutOrder })
-	-- small inner padding so options don't touch the rounded corners (cleaner look)
-	create("UIPadding", { Parent = listFrame, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4) })
+	create("UIListLayout", { Parent = listFrame, Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder })
+	-- inner padding so options don't touch the rounded corners (cleaner look)
+	create("UIPadding", { Parent = listFrame,
+		PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+		PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) })
 
 	local optionButtons = {}
 	local function refresh()
@@ -1744,9 +1746,13 @@ function Section:_buildDropdown(opts, multi)
 
 	local open = false
 	local posConn
-	local LIST_PAD = 4 -- must match the UIPadding above (top+bottom)
-	-- Overlay list stays INSIDE the window: it opens below the button, flips above
-	-- when there isn't room, and clamps its height/x so it never spills out.
+	-- LIST_PAD must match the UIPadding (top+bottom) applied to listFrame above.
+	local LIST_PAD = 4
+	local TITLEBAR_H = 41 -- window title bar height (+1 separator) to stay clear of
+	-- Robust overlay placement: the list always stays INSIDE the window body.
+	-- It opens below the button; if it doesn't fit, it opens upward; whichever
+	-- side is chosen, its height is capped to the room available and a final
+	-- clamp guarantees it can never cover the title bar or spill past any edge.
 	local function positionList()
 		if sidebarMode then return end
 		local btnPos, btnSize = selBtn.AbsolutePosition, selBtn.AbsoluteSize
@@ -1754,30 +1760,41 @@ function Section:_buildDropdown(opts, multi)
 		local gap = 4
 		local desiredH = math.min(contentHeight + LIST_PAD * 2, MAX_H)
 		local mainFrame = self._window and self._window._main
-		if mainFrame and mainFrame.Parent then
-			local mPos, mSize = mainFrame.AbsolutePosition, mainFrame.AbsoluteSize
-			local edge = 8 -- breathing room from the window edges
-			local spaceBelow = (mPos.Y + mSize.Y - edge) - (btnPos.Y + btnSize.Y + gap)
-			local spaceAbove = (btnPos.Y - gap) - (mPos.Y + edge)
-			local h, y = desiredH, btnPos.Y + btnSize.Y + gap
-			if desiredH <= spaceBelow then
-				y = btnPos.Y + btnSize.Y + gap                 -- fits below
-			elseif desiredH <= spaceAbove then
-				y = btnPos.Y - gap - desiredH                  -- flip above
-			elseif spaceBelow >= spaceAbove then
-				h = math.max(OPT_H, spaceBelow)                -- clamp height below
-				y = btnPos.Y + btnSize.Y + gap
-			else
-				h = math.max(OPT_H, spaceAbove)                -- clamp height above
-				y = btnPos.Y - gap - h
-			end
-			local x = clamp(btnPos.X, mPos.X + edge, mPos.X + mSize.X - width - edge)
-			listFrame.Position = UDim2.fromOffset(x, y)
-			listFrame.Size = UDim2.fromOffset(width, h)
-		else
+
+		if not (mainFrame and mainFrame.Parent) then
 			listFrame.Position = UDim2.fromOffset(btnPos.X, btnPos.Y + btnSize.Y + gap)
 			listFrame.Size = UDim2.fromOffset(width, desiredH)
+			return
 		end
+
+		local mPos, mSize = mainFrame.AbsolutePosition, mainFrame.AbsoluteSize
+		local edge   = 8
+		local top    = mPos.Y + TITLEBAR_H          -- never overlap the title bar
+		local bottom = mPos.Y + mSize.Y - edge
+		local left   = mPos.X + edge
+		local right  = mPos.X + mSize.X - edge
+
+		local roomBelow = bottom - (btnPos.Y + btnSize.Y + gap)
+		local roomAbove = (btnPos.Y - gap) - top
+
+		local h, y
+		if desiredH <= roomBelow or roomBelow >= roomAbove then
+			-- open downward (fits, or the button simply has more room below it)
+			h = math.min(desiredH, math.max(OPT_H, roomBelow))
+			y = btnPos.Y + btnSize.Y + gap
+		else
+			-- open upward
+			h = math.min(desiredH, math.max(OPT_H, roomAbove))
+			y = btnPos.Y - gap - h
+		end
+
+		-- hard safety clamp: the list can never leave the window body
+		if y + h > bottom then y = bottom - h end
+		if y < top then y = top end
+		local x = clamp(btnPos.X, left, right - width)
+
+		listFrame.Position = UDim2.fromOffset(x, y)
+		listFrame.Size = UDim2.fromOffset(width, h)
 	end
 	local slideConn
 	local function closeList()
