@@ -74,6 +74,35 @@ local ICONS = {
 }
 
 -- =====================================================================
+--  IMAGE ICON TEMPLATE  (paste your uploaded Roblox decal IDs here)
+-- ---------------------------------------------------------------------
+--  1. Upload your icon to Roblox, grab its rbxassetid.
+--  2. Add an entry below:  ["bird"] = "rbxassetid://1234567890",
+--  3. Use it anywhere as  Icon = "bird"  (Window / Tab / etc).
+--  You can also pass a raw id directly, e.g. Icon = "rbxassetid://123".
+-- =====================================================================
+local IMAGE_ICONS = {
+	-- ["door-open"] = "rbxassetid://0000000000",
+	-- ["bird"]      = "rbxassetid://0000000000",
+	-- ["github"]    = "rbxassetid://0000000000",
+	-- ["house"]     = "rbxassetid://0000000000",
+	-- ["trash"]     = "rbxassetid://0000000000",
+}
+
+-- Turn any icon input into { image = "rbxassetid://..." } or { glyph = "?" }.
+-- Priority: raw asset url > IMAGE_ICONS table > built-in glyph set > literal emoji.
+local function resolveIcon(icon)
+	if type(icon) ~= "string" or icon == "" then return nil end
+	if icon:match("^rbxassetid://") or icon:match("^rbxthumb://") or icon:match("^http") then
+		return { image = icon }
+	end
+	if IMAGE_ICONS[icon] then return { image = IMAGE_ICONS[icon] } end
+	if ICONS[icon] then return { glyph = ICONS[icon] } end
+	if #icon <= 2 then return { glyph = icon } end
+	return nil
+end
+
+-- =====================================================================
 --  UTILITY HELPERS
 -- =====================================================================
 local function create(class, props, children)
@@ -140,6 +169,38 @@ end
 
 -- only one dropdown list may be open at a time
 local activeDropdownClose = nil
+
+-- Lock overlay: covers an element and swallows input while it is locked.
+local function makeLockable(inst)
+	local overlay
+	local function lock()
+		if overlay then return end
+		overlay = create("TextButton", {
+			Parent = inst, BackgroundColor3 = THEME.Background, BackgroundTransparency = 0.5,
+			BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 60,
+			Size = UDim2.new(1, 0, 1, 0),
+		})
+		corner(overlay, RADIUS_SMALL)
+	end
+	local function unlock()
+		if overlay then overlay:Destroy(); overlay = nil end
+	end
+	return lock, unlock
+end
+
+-- Attach the shared element methods every element gets:
+--   :SetTitle(text)  :SetDesc(text)  :Lock()  :Unlock()  :Destroy()
+local function attachCommon(handle, inst, titleLabel, descLabel)
+	local lock, unlock = makeLockable(inst)
+	handle.Lock    = function() lock();   return handle end
+	handle.Unlock  = function() unlock(); return handle end
+	handle.Destroy = function() if inst then inst:Destroy() end end
+	if titleLabel then
+		handle.SetTitle = function(t) titleLabel.Text = tostring(t); return handle end
+	end
+	handle.SetDesc = function(t) if descLabel then descLabel.Text = tostring(t) end; return handle end
+	return handle
+end
 
 -- =====================================================================
 --  ROOT SCREENGUI
@@ -509,9 +570,24 @@ Window.__index = Window
 function Vypers:CreateWindow(opts)
 	opts = opts or {}
 	local title    = opts.Title or "Vypers"
-	local subtitle = opts.SubTitle or ""
-	local size     = opts.Size or Vector2.new(560, 420)
-	local minSize  = Vector2.new(400, 300)
+	-- version badge accepts SubTitle or Version; Author shows as a muted line
+	local subtitle = opts.SubTitle or opts.Version or ""
+	local author   = opts.Author or ""
+
+	-- Size accepts a Vector2 or a UDim2 (offset). MinSize / MaxSize are Vector2.
+	local function toXY(v, dx, dy)
+		if typeof(v) == "Vector2" then return v.X, v.Y
+		elseif typeof(v) == "UDim2" then return v.X.Offset, v.Y.Offset end
+		return dx, dy
+	end
+	local sizeX, sizeY = toXY(opts.Size, 560, 420)
+	local minSize = opts.MinSize or Vector2.new(400, 300)
+	local maxSize = opts.MaxSize or Vector2.new(4096, 4096)
+
+	-- Transparent = false => fully opaque window; true (default) keeps the glass look
+	local winT = (opts.Transparent == false) and 0 or WINDOW_TRANSPARENCY
+
+	if opts.Folder then self._folder = opts.Folder end
 
 	local gui = self:_ensureGui()
 
@@ -519,10 +595,10 @@ function Vypers:CreateWindow(opts)
 	local main = create("Frame", {
 		Name = "Window", Parent = gui,
 		BackgroundColor3 = self._theme.Background,
-		BackgroundTransparency = WINDOW_TRANSPARENCY,
+		BackgroundTransparency = winT,
 		BorderSizePixel = 0,
-		Size = UDim2.fromOffset(size.X, size.Y),
-		Position = UDim2.new(0.5, -size.X/2, 0.5, -size.Y/2),
+		Size = UDim2.fromOffset(sizeX, sizeY),
+		Position = UDim2.new(0.5, -sizeX/2, 0.5, -sizeY/2),
 		ClipsDescendants = true, Active = true,
 	})
 	corner(main, RADIUS_LARGE)
@@ -531,11 +607,11 @@ function Vypers:CreateWindow(opts)
 	-- ---- title bar ---------------------------------------------------
 	local titleBar = create("Frame", {
 		Name = "TitleBar", Parent = main, BackgroundColor3 = self._theme.Surface,
-		BackgroundTransparency = WINDOW_TRANSPARENCY, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 40),
+		BackgroundTransparency = winT, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 40),
 	})
 	corner(titleBar, RADIUS_LARGE)
 	create("Frame", { -- mask bottom corners
-		Parent = titleBar, BackgroundColor3 = self._theme.Surface, BackgroundTransparency = WINDOW_TRANSPARENCY,
+		Parent = titleBar, BackgroundColor3 = self._theme.Surface, BackgroundTransparency = winT,
 		BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, RADIUS_LARGE), Position = UDim2.new(0, 0, 1, -RADIUS_LARGE),
 	})
 	-- title + version sit together on the left, like a page title
@@ -564,6 +640,14 @@ function Vypers:CreateWindow(opts)
 		corner(verBadge, 9)
 		create("UIPadding", { Parent = verBadge, PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) })
 	end
+	if author ~= "" then
+		create("TextLabel", {
+			Parent = titleHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = author,
+			TextColor3 = self._theme.TextMuted, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center, AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 1, 0), LayoutOrder = 3,
+		})
+	end
 
 	local function makeCtrlButton(char, xOffset, hoverColor)
 		local b = create("TextButton", {
@@ -579,7 +663,7 @@ function Vypers:CreateWindow(opts)
 	local minBtn   = makeCtrlButton("\u{2013}", -60, self._theme.SurfaceHover)
 
 	-- ---- sidebar (vertical, scrollable) — holds the tabs -------------
-	local SIDEBAR_W = 150
+	local SIDEBAR_W = opts.SideBarWidth or 150
 	local sidebar = create("ScrollingFrame", {
 		Name = "Sidebar", Parent = main, BackgroundColor3 = self._theme.Surface, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 40), Size = UDim2.new(0, SIDEBAR_W, 1, -40),
@@ -614,6 +698,7 @@ function Vypers:CreateWindow(opts)
 		Name = "Resize", Parent = main, BackgroundTransparency = 1, Text = "\u{25E2}",
 		Font = FONT_TITLE, TextColor3 = self._theme.TextMuted, TextSize = 14, AutoButtonColor = false,
 		Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -18, 1, -18), ZIndex = 5,
+		Visible = (opts.Resizable ~= false),
 	})
 
 	local self_win = setmetatable({}, Window)
@@ -659,7 +744,7 @@ function Vypers:CreateWindow(opts)
 		UserInputService.InputChanged:Connect(function(input)
 			if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 				local delta = input.Position - resizeStart
-				main.Size = UDim2.fromOffset(clamp(startSize.X + delta.X, minSize.X, 4096), clamp(startSize.Y + delta.Y, minSize.Y, 4096))
+				main.Size = UDim2.fromOffset(clamp(startSize.X + delta.X, minSize.X, maxSize.X), clamp(startSize.Y + delta.Y, minSize.Y, maxSize.Y))
 			end
 		end)
 	end
@@ -706,6 +791,16 @@ function Vypers:CreateWindow(opts)
 	end)
 
 	self_win._floatIcon = floatIcon
+	self_win._toggleKey = opts.ToggleKey
+
+	-- ToggleKey: press the key to show/hide the window (Window:SetToggleKey to change)
+	UserInputService.InputBegan:Connect(function(input, gpe)
+		if gpe then return end
+		if self_win._toggleKey and input.KeyCode == self_win._toggleKey then
+			self_win:Toggle()
+		end
+	end)
+
 	return self_win
 end
 
@@ -713,6 +808,12 @@ function Window:Toggle()
 	self._main.Visible = not self._main.Visible
 	self._floatIcon.Visible = not self._main.Visible
 	if activeDropdownClose then activeDropdownClose() end
+end
+
+function Window:SetToggleKey(key)
+	if typeof(key) == "EnumItem" then self._toggleKey = key
+	elseif type(key) == "string" and Enum.KeyCode[key] then self._toggleKey = Enum.KeyCode[key] end
+	return self._toggleKey
 end
 
 -- convenience passthroughs
@@ -732,18 +833,25 @@ function Window:CreateTab(opts)
 	local icon  = opts.Icon
 	local theme = self._vypers._theme
 
-	local iconText = ""
-	if icon and ICONS[icon] then iconText = ICONS[icon] .. "  "
-	elseif icon and type(icon) == "string" and #icon <= 2 then iconText = icon .. "  " end
+	local resolved = resolveIcon(icon)
+	local textPrefix = ""
+	if resolved and resolved.glyph then textPrefix = resolved.glyph .. "  " end
 
 	local btn = create("TextButton", {
 		Name = "Tab_" .. title, Parent = self._sidebar, BackgroundColor3 = theme.SurfaceHover,
 		BackgroundTransparency = 0, BorderSizePixel = 0,
-		Text = iconText .. title, Font = FONT_TITLE, TextColor3 = theme.TextDim, TextSize = 13,
+		Text = textPrefix .. title, Font = FONT_TITLE, TextColor3 = theme.TextDim, TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 34),
 	})
 	corner(btn, RADIUS_SMALL)
-	create("UIPadding", { Parent = btn, PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 10) })
+	local tabLeftPad = (resolved and resolved.image) and 34 or 12
+	create("UIPadding", { Parent = btn, PaddingLeft = UDim.new(0, tabLeftPad), PaddingRight = UDim.new(0, 10) })
+	if resolved and resolved.image then
+		create("ImageLabel", {
+			Parent = btn, BackgroundTransparency = 1, Image = resolved.image,
+			Size = UDim2.fromOffset(16, 16), Position = UDim2.new(0, -tabLeftPad + 10, 0.5, -8),
+		})
+	end
 
 	local page = create("ScrollingFrame", {
 		Name = "Page_" .. title, Parent = self._content, BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -809,39 +917,57 @@ function Tab:CreateSection(opts)
 	local title = opts.Title or "Section"
 	local theme = self._theme
 
+	-- Section options:
+	--   Box        = true|false  -> boxed surface + border (default true); false = flat/transparent group
+	--   Opened     = true|false  -> initial expanded state (default true)
+	--   FontWeight = "Thin"|"Light"|"Regular"|"Medium"|"SemiBold"|"Bold"|"Black" -> header title font
+	local boxed = opts.Box ~= false
+	local startOpen = opts.Opened ~= false
+	local function weightFont(w)
+		if typeof(w) == "EnumItem" then return w end
+		local map = {
+			Thin = Enum.Font.Gotham, Light = Enum.Font.Gotham, Regular = Enum.Font.Gotham,
+			Medium = Enum.Font.GothamMedium, SemiBold = Enum.Font.GothamBold,
+			Bold = Enum.Font.GothamBold, Black = Enum.Font.GothamBlack, Heavy = Enum.Font.GothamBlack,
+		}
+		return map[tostring(w)] or FONT_TITLE
+	end
+	local headerFont = opts.FontWeight and weightFont(opts.FontWeight) or FONT_TITLE
+
 	local container = create("Frame", {
-		Name = "Section_" .. title, Parent = self._page, BackgroundColor3 = theme.Surface, BorderSizePixel = 0,
+		Name = "Section_" .. title, Parent = self._page,
+		BackgroundColor3 = theme.Surface, BackgroundTransparency = boxed and 0 or 1, BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, HEADER_H), AutomaticSize = Enum.AutomaticSize.Y, ClipsDescendants = true,
 	})
 	corner(container, RADIUS_LARGE)
-	stroke(container, theme.Border, 1)
+	if boxed then stroke(container, theme.Border, 1) end
 	create("UIListLayout", { Parent = container, FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder })
 
 	local header = create("TextButton", {
-		Name = "Header", Parent = container, BackgroundColor3 = theme.Surface, BorderSizePixel = 0,
-		Text = "", AutoButtonColor = false, Size = UDim2.new(1, 0, 0, HEADER_H), LayoutOrder = 0,
+		Name = "Header", Parent = container, BackgroundColor3 = theme.Surface, BackgroundTransparency = 1,
+		BorderSizePixel = 0, Text = "", AutoButtonColor = false, Size = UDim2.new(1, 0, 0, HEADER_H), LayoutOrder = 0,
 	})
 	local arrow = create("TextLabel", {
-		Parent = header, BackgroundTransparency = 1, Font = FONT_TITLE, Text = "\u{25BC}",
+		Parent = header, BackgroundTransparency = 1, Font = FONT_TITLE, Text = startOpen and "\u{25BC}" or "\u{25B6}",
 		TextColor3 = theme.Accent, TextSize = 10, Size = UDim2.fromOffset(20, HEADER_H), Position = UDim2.new(1, -26, 0, 0),
 	})
 	create("TextLabel", {
-		Parent = header, BackgroundTransparency = 1, Font = FONT_TITLE, Text = title,
+		Parent = header, BackgroundTransparency = 1, Font = headerFont, Text = title,
 		TextColor3 = theme.Text, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left,
-		Position = UDim2.new(0, 14, 0, 0), Size = UDim2.new(1, -44, 1, 0),
+		Position = UDim2.new(0, boxed and 14 or 4, 0, 0), Size = UDim2.new(1, -44, 1, 0),
 	})
 
 	local body = create("Frame", {
 		Name = "Body", Parent = container, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1,
+		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1, Visible = startOpen,
 	})
 	create("UIListLayout", { Parent = body, FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder })
-	create("UIPadding", { Parent = body, PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 12),
-		PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) })
+	create("UIPadding", { Parent = body, PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, boxed and 12 or 4),
+		PaddingLeft = UDim.new(0, boxed and 12 or 0), PaddingRight = UDim.new(0, boxed and 12 or 0) })
 
-	local open = true
+	local open = startOpen
 	header.MouseButton1Click:Connect(function()
 		open = not open
 		body.Visible = open
@@ -855,6 +981,13 @@ function Tab:CreateSection(opts)
 	self_sec._body = body
 	self_sec._theme = theme
 	self_sec._order = 0
+	-- section-level controls: expand / collapse programmatically
+	self_sec.SetOpen = function(v)
+		open = (v ~= false)
+		body.Visible = open
+		arrow.Text = open and "\u{25BC}" or "\u{25B6}"
+	end
+	self_sec.Toggle = function() self_sec.SetOpen(not open) end
 	return self_sec
 end
 
@@ -867,6 +1000,33 @@ function Section:_row(height)
 	})
 	corner(row, RADIUS_LARGE)
 	return row
+end
+
+-- Optional subtitle/description shown under a row title. It grows the row height,
+-- moves a vertically-centered title to the top, then adds a small muted label
+-- underneath. Returns the desc label (or nil when no desc text was provided) so
+-- the caller can hand it to attachCommon for a working handle.SetDesc().
+local function applyDesc(row, titleLbl, descText, theme)
+	if not descText or descText == "" then return nil end
+	local sz = row.Size
+	row.Size = UDim2.new(sz.X.Scale, sz.X.Offset, sz.Y.Scale, sz.Y.Offset + 14)
+	local tx = titleLbl.Position.X
+	local titleH = titleLbl.Size.Y.Offset
+	if titleLbl.Size.Y.Scale == 1 then
+		-- vertically-centered title -> pin it to the top so the desc fits below
+		titleLbl.TextYAlignment = Enum.TextYAlignment.Top
+		titleLbl.Position = UDim2.new(tx.Scale, tx.Offset, 0, 6)
+		titleLbl.Size = UDim2.new(titleLbl.Size.X.Scale, titleLbl.Size.X.Offset, 0, 15)
+		titleH = 15
+	end
+	local descY = titleLbl.Position.Y.Offset + titleH
+	return create("TextLabel", {
+		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = descText,
+		TextColor3 = theme.TextMuted, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		Position = UDim2.new(tx.Scale, tx.Offset, 0, descY),
+		Size = UDim2.new(titleLbl.Size.X.Scale, titleLbl.Size.X.Offset, 0, 14),
+	})
 end
 
 -- =====================================================================
@@ -886,6 +1046,8 @@ function Section:CreateLabel(opts)
 		Get = function() return (row.Text:gsub("^%s+", "")) end,
 		SetText = function(v) row.Text = "  " .. tostring(v) end,
 	}
+	attachCommon(handle, row)
+	handle.SetTitle = function(t) row.Text = "  " .. tostring(t); return handle end
 	registerElement(opts.Id, handle)
 	return handle
 end
@@ -895,31 +1057,108 @@ end
 -- =====================================================================
 function Section:CreateParagraph(opts)
 	opts = opts or {}
+	local theme = self._theme
+	local function toAsset(v)
+		if type(v) == "number" then return "rbxassetid://" .. v end
+		return tostring(v)
+	end
 	local box = create("Frame", {
-		Parent = self._body, BackgroundColor3 = self._theme.SurfaceLight, BorderSizePixel = 0,
+		Parent = self._body, BackgroundColor3 = theme.SurfaceLight, BorderSizePixel = 0,
 		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = self:_next(),
 	})
 	corner(box, RADIUS_LARGE)
 	create("UIPadding", { Parent = box, PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
 		PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) })
-	create("UIListLayout", { Parent = box, Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder })
+	create("UIListLayout", { Parent = box, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
+	local titleLbl
 	if opts.Title then
-		create("TextLabel", {
+		titleLbl = create("TextLabel", {
 			Parent = box, BackgroundTransparency = 1, Font = FONT_TITLE, Text = opts.Title,
-			TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
+			TextColor3 = theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 			Size = UDim2.new(1, 0, 0, 16), LayoutOrder = 1,
 		})
 	end
 	local bodyLbl = create("TextLabel", {
 		Parent = box, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Text or opts.Content or "",
-		TextColor3 = self._theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
 		TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2,
 	})
+
+	-- optional inline image (full width). opts.Image = assetid|url, opts.ImageHeight optional.
+	local imageObj
+	if opts.Image then
+		imageObj = create("ImageLabel", {
+			Parent = box, BackgroundColor3 = theme.Background, BorderSizePixel = 0, Image = toAsset(opts.Image),
+			ScaleType = Enum.ScaleType.Fit, Size = UDim2.new(1, 0, 0, opts.ImageHeight or 140), LayoutOrder = 3,
+		})
+		corner(imageObj, RADIUS_SMALL)
+	end
+
+	-- optional thumbnail. opts.Thumbnail = assetid (number/string) or a full rbxthumb/rbxassetid/http url.
+	local thumbObj
+	if opts.Thumbnail then
+		local t = opts.Thumbnail
+		local src
+		if type(t) == "string" and (string.sub(t, 1, 9) == "rbxthumb:" or string.sub(t, 1, 3) == "rbx" or string.sub(t, 1, 4) == "http") then
+			src = t
+		else
+			local id = (tostring(t):gsub("%D", ""))
+			src = "rbxthumb://type=Asset&id=" .. id .. "&w=420&h=420"
+		end
+		thumbObj = create("ImageLabel", {
+			Parent = box, BackgroundColor3 = theme.Background, BorderSizePixel = 0, Image = src,
+			ScaleType = Enum.ScaleType.Fit, Size = UDim2.new(1, 0, 0, opts.ThumbnailHeight or 150), LayoutOrder = 4,
+		})
+		corner(thumbObj, RADIUS_SMALL)
+	end
+
+	-- optional action buttons row. opts.Buttons = { { Title, Callback, Variant, Icon } }
+	-- Variant: "Primary" (accent) | "Secondary" (outlined, default) | "Tertiary" (ghost)
+	if type(opts.Buttons) == "table" and #opts.Buttons > 0 then
+		local btnRow = create("Frame", {
+			Parent = box, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 5,
+		})
+		create("UIListLayout", {
+			Parent = btnRow, FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left, VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
+		})
+		for i, b in ipairs(opts.Buttons) do
+			local variant = b.Variant or "Secondary"
+			local bg, fg, painted = theme.SurfaceHover, theme.Text, true
+			if variant == "Primary" then
+				bg, fg = theme.Accent, Color3.fromRGB(255, 255, 255)
+			elseif variant == "Tertiary" then
+				painted = false; fg = theme.TextDim
+			end
+			local ri = resolveIcon(b.Icon)
+			local prefix = (ri and ri.glyph) and (ri.glyph .. "  ") or ""
+			local btn = create("TextButton", {
+				Parent = btnRow, AutoButtonColor = false, Font = FONT_TITLE, Text = prefix .. (b.Title or "OK"),
+				TextColor3 = fg, TextSize = 12, BorderSizePixel = 0,
+				BackgroundColor3 = painted and bg or theme.SurfaceLight, BackgroundTransparency = painted and 0 or 1,
+				AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 0, 28), LayoutOrder = i,
+			})
+			corner(btn, RADIUS_SMALL)
+			if variant == "Secondary" then stroke(btn, theme.Border, 1) end
+			create("UIPadding", { Parent = btn, PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14) })
+			if ri and ri.image then
+				create("ImageLabel", {
+					Parent = btn, BackgroundTransparency = 1, Image = ri.image, AnchorPoint = Vector2.new(0, 0.5),
+					Position = UDim2.new(0, 4, 0.5, 0), Size = UDim2.fromOffset(14, 14),
+				})
+			end
+			btn.MouseButton1Click:Connect(function() if b.Callback then pcall(b.Callback) end end)
+		end
+	end
+
 	local handle = {
 		Type = "Paragraph", Id = opts.Id, Instance = box,
 		Set = function(v) bodyLbl.Text = tostring(v) end,
 		SetText = function(v) bodyLbl.Text = tostring(v) end,
+		SetImage = function(v) if imageObj then imageObj.Image = toAsset(v) end end,
 	}
+	attachCommon(handle, box, titleLbl, bodyLbl)
 	return handle
 end
 
@@ -949,16 +1188,21 @@ function Section:CreateCode(opts)
 		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(22, 22),
 	})
 	corner(copyBtn, RADIUS_SMALL)
+	local onCopyFn
 	copyBtn.MouseButton1Click:Connect(function()
 		setClipboard(label.Text)
 		copyBtn.Text = "\u{2713}"
+		if onCopyFn then pcall(onCopyFn) end
 		task.delay(1, function() if copyBtn and copyBtn.Parent then copyBtn.Text = "\u{29C9}" end end)
 	end)
 	local handle = {
 		Type = "Code", Id = opts.Id, Instance = box,
 		Set = function(v) label.Text = tostring(v) end,
+		SetCode = function(v) label.Text = tostring(v) end,
 		Get = function() return label.Text end,
+		OnCopy = function(fn) onCopyFn = fn end,
 	}
+	attachCommon(handle, box)
 	return handle
 end
 
@@ -969,7 +1213,7 @@ function Section:CreateTag(opts)
 	opts = opts or {}
 	local color = opts.Color or self._theme.Accent
 	local row = self:_row(ELEMENT_H)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Title or "Tag",
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -120, 1, 0),
@@ -988,6 +1232,7 @@ function Section:CreateTag(opts)
 		SetColor = function(c) pill.BackgroundColor3 = c end,
 		Get = function() return pill.Text end,
 	}
+	attachCommon(handle, row, titleLbl)
 	return handle
 end
 
@@ -1021,16 +1266,88 @@ end
 function Section:CreateButton(opts)
 	opts = opts or {}
 	local callback = opts.Callback or function() end
+
+	-- advanced options: Color (paint the button), Justify, IconAlign, Icon
+	local baseColor = opts.Color or self._theme.SurfaceLight
+	local function pickText(c)
+		local lum = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B
+		return (lum > 0.6) and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(255, 255, 255)
+	end
+	local function lighten(c, a)
+		return Color3.new(math.min(c.R + a, 1), math.min(c.G + a, 1), math.min(c.B + a, 1))
+	end
+	local textColor  = opts.Color and pickText(opts.Color) or self._theme.Text
+	local hoverColor = opts.Color and lighten(opts.Color, 0.08) or self._theme.SurfaceHover
+
 	local btn = create("TextButton", {
-		Parent = self._body, BackgroundColor3 = self._theme.SurfaceLight, BorderSizePixel = 0,
-		Font = FONT_TITLE, Text = opts.Title or "Button", TextColor3 = self._theme.Text, TextSize = 13,
-		AutoButtonColor = false, Size = UDim2.new(1, 0, 0, ELEMENT_H), LayoutOrder = self:_next(),
+		Parent = self._body, BackgroundColor3 = baseColor, BorderSizePixel = 0,
+		Text = "", AutoButtonColor = false, Size = UDim2.new(1, 0, 0, ELEMENT_H), LayoutOrder = self:_next(),
 	})
 	corner(btn, RADIUS_LARGE)
 	stroke(btn, self._theme.Border, 1)
-	addHover(btn, self._theme.SurfaceLight, self._theme.SurfaceHover)
+	addHover(btn, baseColor, hoverColor)
+
+	local justify   = opts.Justify or "Center"   -- Center | Left | Right | Between
+	local iconAlign = opts.IconAlign or "Left"     -- Left | Right
+	local resolved  = resolveIcon(opts.Icon)
+
+	local iconEl
+	if resolved and resolved.image then
+		iconEl = create("ImageLabel", { BackgroundTransparency = 1, Image = resolved.image, Size = UDim2.fromOffset(16, 16) })
+	elseif resolved and resolved.glyph then
+		iconEl = create("TextLabel", { BackgroundTransparency = 1, Font = FONT_TITLE, Text = resolved.glyph,
+			TextColor3 = textColor, TextSize = 14, Size = UDim2.fromOffset(16, 16) })
+	end
+
+	local label = create("TextLabel", {
+		BackgroundTransparency = 1, Font = FONT_TITLE, Text = opts.Title or "Button",
+		TextColor3 = textColor, TextSize = 13, TextYAlignment = Enum.TextYAlignment.Center,
+		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 1, 0),
+	})
+
+	if justify == "Between" then
+		label.AutomaticSize = Enum.AutomaticSize.None
+		label.Parent = btn
+		if iconEl then iconEl.Parent = btn; iconEl.AnchorPoint = Vector2.new(0, 0.5) end
+		if iconAlign == "Right" then
+			if iconEl then iconEl.Position = UDim2.new(1, -28, 0.5, 0) end
+			label.Position = UDim2.new(0, 12, 0, 0); label.Size = UDim2.new(1, -40, 1, 0)
+			label.TextXAlignment = Enum.TextXAlignment.Left
+		else
+			if iconEl then iconEl.Position = UDim2.new(0, 12, 0.5, 0) end
+			label.Position = UDim2.new(0, (iconEl and 36 or 12), 0, 0)
+			label.Size = UDim2.new(1, (iconEl and -48 or -24), 1, 0)
+			label.TextXAlignment = Enum.TextXAlignment.Right
+		end
+	else
+		local holder = create("Frame", {
+			Parent = btn, BackgroundTransparency = 1,
+			Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0),
+		})
+		local hAlign = (justify == "Left" and Enum.HorizontalAlignment.Left)
+			or (justify == "Right" and Enum.HorizontalAlignment.Right)
+			or Enum.HorizontalAlignment.Center
+		create("UIListLayout", {
+			Parent = holder, FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = hAlign,
+			VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
+		})
+		label.Parent = holder; label.LayoutOrder = 1
+		if iconEl then
+			iconEl.Parent = holder
+			iconEl.LayoutOrder = (iconAlign == "Right") and 2 or 0
+		end
+	end
+
 	btn.MouseButton1Click:Connect(function() pcall(callback) end)
-	return { Type = "Button", Id = opts.Id, Instance = btn }
+
+	local handle = {
+		Type = "Button", Id = opts.Id, Instance = btn,
+		SetColor = function(c) btn.BackgroundColor3 = c end,
+		Fire = function() pcall(callback) end,
+	}
+	attachCommon(handle, btn, label)
+	registerElement(opts.Id, handle)
+	return handle
 end
 
 -- =====================================================================
@@ -1042,7 +1359,7 @@ function Section:CreateToggle(opts)
 	local state = opts.Default and true or false
 
 	local row = self:_row(ELEMENT_H)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Title or "Toggle",
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -60, 1, 0),
@@ -1070,11 +1387,13 @@ function Section:CreateToggle(opts)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then set(not state) end
 	end)
 	addHover(row, self._theme.SurfaceLight, self._theme.SurfaceHover)
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
 	local handle = {
 		Type = "Toggle", Id = opts.Id, Instance = row,
 		Get = function() return state end, Set = function(v) set(v, true) end,
 		Callback = callback,
 	}
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	if state then pcall(callback, state) end
 	return handle
@@ -1093,7 +1412,7 @@ function Section:CreateSlider(opts)
 	local value = clamp(opts.Default or min, min, max)
 
 	local row = self:_row(46)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Title or "Slider",
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 4), Size = UDim2.new(1, -80, 0, 18),
@@ -1146,11 +1465,15 @@ function Section:CreateSlider(opts)
 			updateFromX(input.Position.X)
 		end
 	end)
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
 	local handle = {
 		Type = "Slider", Id = opts.Id, Instance = row,
 		Get = function() return value end, Set = function(v) set(v, true) end,
+		SetMin = function(m) min = m; set(value, true) end,
+		SetMax = function(m) max = m; set(value, true) end,
 		Callback = callback,
 	}
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	pcall(callback, value)
 	return handle
@@ -1163,7 +1486,7 @@ function Section:CreateInput(opts)
 	opts = opts or {}
 	local callback = opts.Callback or function() end
 	local row = self:_row(ELEMENT_H)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Title or "Input",
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(0.4, -10, 1, 0),
@@ -1181,11 +1504,14 @@ function Section:CreateInput(opts)
 		TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 8, 0, 0), Size = UDim2.new(1, -16, 1, 0),
 	})
 	box.FocusLost:Connect(function() pcall(callback, box.Text); autoSaveTrigger() end)
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
 	local handle = {
 		Type = "Input", Id = opts.Id, Instance = row,
 		Get = function() return box.Text end, Set = function(v) box.Text = tostring(v) end,
+		SetPlaceholder = function(v) box.PlaceholderText = tostring(v) end,
 		Callback = callback,
 	}
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	return handle
 end
@@ -1199,7 +1525,7 @@ function Section:CreateKeybind(opts)
 	local key = opts.Default or Enum.KeyCode.RightShift
 	local listening = false
 	local row = self:_row(ELEMENT_H)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Title or "Keybind",
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -110, 1, 0),
@@ -1219,6 +1545,7 @@ function Section:CreateKeybind(opts)
 			pcall(callback, key)
 		end
 	end)
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
 	local handle = {
 		Type = "Keybind", Id = opts.Id, Instance = row,
 		Get = function() return key.Name end,
@@ -1228,6 +1555,7 @@ function Section:CreateKeybind(opts)
 			keyBtn.Text = key.Name
 		end,
 	}
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	return handle
 end
@@ -1246,6 +1574,10 @@ function Section:_buildDropdown(opts, multi)
 	local values = opts.Values or {}
 	local gui = self._vypers:_ensureGui()
 
+	-- AllowNone: single-select defaults to REQUIRING a choice; multi defaults to
+	-- allowing an empty selection. Override with opts.AllowNone.
+	local allowNone = (multi and (opts.AllowNone ~= false)) or (opts.AllowNone == true)
+
 	local selected = {}
 	if multi then
 		if type(opts.Default) == "table" then
@@ -1255,27 +1587,61 @@ function Section:_buildDropdown(opts, multi)
 		if opts.Default ~= nil then selected[opts.Default] = true end
 	end
 
+	-- Values accept plain strings OR advanced entries:
+	--   { Title = "Label", Value = "key", Icon = "sword", Desc = "extra text" }
+	--   { Divider = true, Title = "Section" }  -- non-selectable separator
+	local function normalize(raw)
+		local ents, vlist = {}, {}
+		for _, item in ipairs(raw or {}) do
+			if type(item) == "table" then
+				if item.Divider then
+					table.insert(ents, { divider = true, title = item.Title })
+				else
+					local val = item.Value
+					if val == nil then val = item.Title end
+					table.insert(ents, { value = val, title = tostring(item.Title or val), icon = item.Icon, desc = item.Desc })
+					table.insert(vlist, val)
+				end
+			else
+				table.insert(ents, { value = item, title = tostring(item) })
+				table.insert(vlist, item)
+			end
+		end
+		return ents, vlist
+	end
+	local entries, valueList = normalize(values)
+
 	local function orderedSelection()
 		local list = {}
-		for _, v in ipairs(values) do if selected[v] then table.insert(list, v) end end
+		for _, v in ipairs(valueList) do if selected[v] then table.insert(list, v) end end
 		return list
+	end
+	local function labelFor(v)
+		for _, e in ipairs(entries) do
+			if not e.divider and e.value == v then return e.title end
+		end
+		return tostring(v)
 	end
 	local function selectionText()
 		local list = orderedSelection()
 		if #list == 0 then return "None" end
 		if multi and #list > 2 then return tostring(#list) .. " selected" end
-		return table.concat(list, ", ")
+		local labels = {}
+		for _, v in ipairs(list) do table.insert(labels, labelFor(v)) end
+		return table.concat(labels, ", ")
 	end
 	local function selectionValue()
 		if multi then return orderedSelection() else return orderedSelection()[1] end
 	end
 
-	local OPT_H = 26
-	local MAX_VISIBLE = 6
+	local OPT_H = 30
+	local DESC_EXTRA = 16
+	local MAX_H = 210
+	local contentHeight = 0
 
 	-- the row stays a FIXED height; the list is a floating overlay
 	local row = self:_row(ELEMENT_H)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE,
 		Text = opts.Title or (multi and "Multi Dropdown" or "Dropdown"),
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
@@ -1314,23 +1680,20 @@ function Section:_buildDropdown(opts, multi)
 	local optionButtons = {}
 	local function refresh()
 		selBtn.Text = "  " .. selectionText()
-		for v, b in pairs(optionButtons) do
+		for v, o in pairs(optionButtons) do
 			local isSel = selected[v] and true or false
-			-- NO blue block on selection: background stays dark; selection is shown
-			-- only via brighter text + a check mark, keeping the list clean
-			b.BackgroundColor3 = self._theme.Surface
-			b.TextColor3 = isSel and self._theme.Text or self._theme.TextDim
-			local chk = b:FindFirstChild("Check")
-			if chk then chk.Text = isSel and "\u{2713}" or "" end
+			-- clean look: no blue fill; selection shown via brighter text + a check mark
+			o.button.BackgroundColor3 = self._theme.Surface
+			o.title.TextColor3 = isSel and self._theme.Text or self._theme.TextDim
+			if o.check then o.check.Text = isSel and "\u{2713}" or "" end
 		end
 	end
 
 	local open = false
 	local posConn
 	local function positionList()
-		local shown = math.min(#values, MAX_VISIBLE)
 		listFrame.Position = UDim2.fromOffset(selBtn.AbsolutePosition.X, selBtn.AbsolutePosition.Y + selBtn.AbsoluteSize.Y + 2)
-		listFrame.Size = UDim2.fromOffset(selBtn.AbsoluteSize.X, shown * OPT_H)
+		listFrame.Size = UDim2.fromOffset(selBtn.AbsoluteSize.X, math.min(contentHeight, MAX_H))
 	end
 	local function closeList()
 		open = false
@@ -1352,40 +1715,104 @@ function Section:_buildDropdown(opts, multi)
 	end
 
 	local function rebuild()
-		-- clear old option buttons, then recreate from the current `values`
-		for _, b in pairs(optionButtons) do b:Destroy() end
+		-- clear old rows (keep the UIListLayout), then recreate from `entries`
+		for _, c in ipairs(listFrame:GetChildren()) do
+			if not c:IsA("UIListLayout") then c:Destroy() end
+		end
 		optionButtons = {}
-		for i, v in ipairs(values) do
-			local ob = create("TextButton", {
-				Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0, Font = FONT_VALUE,
-				Text = "  " .. tostring(v), TextColor3 = self._theme.TextDim, TextSize = 12,
-				TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
-				Size = UDim2.new(1, 0, 0, OPT_H), LayoutOrder = i, ZIndex = 302,
-			})
-			if multi then
-				create("TextLabel", {
-					Name = "Check", Parent = ob, BackgroundTransparency = 1, Font = FONT_TITLE,
-					Text = selected[v] and "\u{2713}" or "", TextColor3 = self._theme.Accent, TextSize = 12,
-					Position = UDim2.new(1, -20, 0, 0), Size = UDim2.fromOffset(16, OPT_H), ZIndex = 303,
+		contentHeight = 0
+		for i, entry in ipairs(entries) do
+			if entry.divider then
+				local dh = entry.title and 24 or 9
+				local dframe = create("Frame", {
+					Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+					Size = UDim2.new(1, 0, 0, dh), LayoutOrder = i, ZIndex = 302,
 				})
-			end
-			optionButtons[v] = ob
-			addHover(ob, self._theme.Surface, self._theme.SurfaceHover)
-			ob.MouseButton1Click:Connect(function()
-				if multi then
-					selected[v] = (not selected[v]) or nil
-					refresh()
-					pcall(callback, selectionValue())
-					autoSaveTrigger()
-				else
-					for k in pairs(selected) do selected[k] = nil end
-					selected[v] = true
-					refresh()
-					closeList()
-					pcall(callback, selectionValue())
-					autoSaveTrigger()
+				create("Frame", { -- thin separator line
+					Parent = dframe, BackgroundColor3 = self._theme.Border, BorderSizePixel = 0,
+					Position = UDim2.new(0, 8, entry.title and 1 or 0.5, entry.title and -1 or 0),
+					Size = UDim2.new(1, -16, 0, 1), ZIndex = 303,
+				})
+				if entry.title then
+					create("TextLabel", {
+						Parent = dframe, BackgroundTransparency = 1, Font = FONT_TITLE, Text = string.upper(entry.title),
+						TextColor3 = self._theme.TextMuted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
+						TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.new(0, 8, 0, 3),
+						Size = UDim2.new(1, -16, 0, dh - 6), ZIndex = 303,
+					})
 				end
-			end)
+				contentHeight = contentHeight + dh
+			else
+				local v = entry.value
+				local h = entry.desc and (OPT_H + DESC_EXTRA) or OPT_H
+				local ob = create("TextButton", {
+					Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0, Text = "",
+					AutoButtonColor = false, Size = UDim2.new(1, 0, 0, h), LayoutOrder = i, ZIndex = 302,
+				})
+				local textX = 10
+				local ri = resolveIcon(entry.icon)
+				if ri and ri.glyph then
+					create("TextLabel", {
+						Parent = ob, BackgroundTransparency = 1, Font = FONT_VALUE, Text = ri.glyph,
+						TextColor3 = self._theme.TextDim, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Center,
+						Position = UDim2.new(0, 6, 0, 0), Size = UDim2.new(0, 18, 0, OPT_H), ZIndex = 303,
+					})
+					textX = 28
+				elseif ri and ri.image then
+					create("ImageLabel", {
+						Parent = ob, BackgroundTransparency = 1, Image = ri.image, AnchorPoint = Vector2.new(0, 0.5),
+						Position = UDim2.new(0, 8, 0, OPT_H / 2), Size = UDim2.fromOffset(16, 16), ZIndex = 303,
+					})
+					textX = 30
+				end
+				local titleLabel = create("TextLabel", {
+					Parent = ob, BackgroundTransparency = 1, Font = FONT_VALUE, Text = entry.title,
+					TextColor3 = self._theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+					Position = UDim2.new(0, textX, 0, 0), Size = UDim2.new(1, -textX - 24, 0, entry.desc and 18 or OPT_H),
+					ZIndex = 303,
+				})
+				if entry.desc then
+					titleLabel.Position = UDim2.new(0, textX, 0, 5)
+					titleLabel.TextYAlignment = Enum.TextYAlignment.Bottom
+					create("TextLabel", {
+						Parent = ob, BackgroundTransparency = 1, Font = FONT_VALUE, Text = entry.desc,
+						TextColor3 = self._theme.TextMuted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
+						TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true,
+						Position = UDim2.new(0, textX, 0, 24), Size = UDim2.new(1, -textX - 24, 0, DESC_EXTRA + 2), ZIndex = 303,
+					})
+				end
+				local check = create("TextLabel", {
+					Name = "Check", Parent = ob, BackgroundTransparency = 1, Font = FONT_TITLE,
+					Text = selected[v] and "\u{2713}" or "", TextColor3 = self._theme.Accent, TextSize = 13,
+					Position = UDim2.new(1, -20, 0, 0), Size = UDim2.new(0, 16, 1, 0), ZIndex = 303,
+				})
+				optionButtons[v] = { button = ob, title = titleLabel, check = check }
+				addHover(ob, self._theme.Surface, self._theme.SurfaceHover)
+				ob.MouseButton1Click:Connect(function()
+					if multi then
+						if selected[v] then
+							if allowNone or #orderedSelection() > 1 then selected[v] = nil end
+						else
+							selected[v] = true
+						end
+						refresh()
+						pcall(callback, selectionValue())
+						autoSaveTrigger()
+					else
+						if allowNone and selected[v] then
+							selected[v] = nil
+						else
+							for k in pairs(selected) do selected[k] = nil end
+							selected[v] = true
+						end
+						refresh()
+						closeList()
+						pcall(callback, selectionValue())
+						autoSaveTrigger()
+					end
+				end)
+				contentHeight = contentHeight + h
+			end
 		end
 		refresh()
 		if open then positionList() end
@@ -1406,9 +1833,10 @@ function Section:_buildDropdown(opts, multi)
 	local function setValues(newValues, keepSelection)
 		newValues = newValues or {}
 		values = newValues
+		entries, valueList = normalize(values)
 		if not keepSelection then
 			local valid = {}
-			for _, v in ipairs(values) do valid[v] = true end
+			for _, v in ipairs(valueList) do valid[v] = true end
 			for k in pairs(selected) do if not valid[k] then selected[k] = nil end end
 		end
 		rebuild()
@@ -1432,6 +1860,9 @@ function Section:_buildDropdown(opts, multi)
 		GetValues = function() return values end,
 		Callback  = callback,
 	}
+	handle.Select = handle.Set
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	pcall(callback, selectionValue())
 
@@ -1443,8 +1874,9 @@ function Section:_buildDropdown(opts, multi)
 		task.spawn(function()
 			while row and row.Parent do
 				local ok, newValues = pcall(opts.Refresh)
-				if ok and type(newValues) == "table" and not sameList(newValues, values) then
-					setValues(newValues, true)
+				if ok and type(newValues) == "table" then
+					local _, newVList = normalize(newValues)
+					if not sameList(newVList, valueList) then setValues(newValues, true) end
 				end
 				task.wait(interval)
 			end
@@ -1477,7 +1909,7 @@ function Section:CreateColorPicker(opts)
 	local gui = self._vypers:_ensureGui()
 
 	local row = self:_row(ELEMENT_H)
-	create("TextLabel", {
+	local titleLbl = create("TextLabel", {
 		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE, Text = opts.Title or "Color",
 		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -60, 1, 0),
@@ -1592,6 +2024,7 @@ function Section:CreateColorPicker(opts)
 	preview.MouseButton1Click:Connect(function() if pOpen then closeP() else openP() end end)
 	catcher.MouseButton1Click:Connect(closeP)
 
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
 	local handle = {
 		Type = "ColorPicker", Id = opts.Id, Instance = row,
 		Get = function()
@@ -1606,6 +2039,7 @@ function Section:CreateColorPicker(opts)
 			updateColor(false)
 		end,
 	}
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	return handle
 end
