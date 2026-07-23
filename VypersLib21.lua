@@ -1616,7 +1616,14 @@ function Section:_buildDropdown(opts, multi)
 	opts = opts or {}
 	local callback = opts.Callback or function() end
 	local values = opts.Values or {}
-	local theme = self._theme
+	local gui = self._vypers:_ensureGui()
+
+	-- SIDEBAR MODE state (opts.Sidebar = true): render the option list as a panel
+	-- docked to the right of the window with a search box, instead of an overlay.
+	local sidebarMode = opts.Sidebar == true
+	local sidebarW = 210
+	local searchQuery = ""
+	local sidebarPanel, searchBox
 
 	-- AllowNone: single-select defaults to REQUIRING a choice; multi defaults to
 	-- allowing an empty selection. Override with opts.AllowNone.
@@ -1678,194 +1685,207 @@ function Section:_buildDropdown(opts, multi)
 		if multi then return orderedSelection() else return orderedSelection()[1] end
 	end
 
-	-- ---- layout constants -------------------------------------------
-	local descText   = opts.Desc or opts.Description
-	local HEADER_H   = descText and (ELEMENT_H + 14) or ELEMENT_H
-	local OPT_H      = 30
+	local OPT_H = 30
 	local DESC_EXTRA = 16
-	local ITEM_GAP   = 2   -- spacing between options (UIListLayout)
-	local LIST_INSET = 12  -- UIPadding top+bottom of the list
-	local MAX_LIST_H = 200 -- list scrolls internally beyond this
-
-	-- ---- expandable container: grows in place, clips its options when closed
-	-- (inline dropdown -- it never floats outside the window, it just pushes the
-	--  page down and the tab scrolls, so it can NEVER spill past any edge)
-	local container = create("Frame", {
-		Parent = self._body, BackgroundColor3 = theme.SurfaceLight, BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, HEADER_H), ClipsDescendants = true, LayoutOrder = self:_next(),
-	})
-	corner(container, RADIUS_LARGE)
-
-	-- header: the always-visible row you click to expand / collapse
-	local header = create("TextButton", {
-		Parent = container, BackgroundColor3 = theme.SurfaceLight, BackgroundTransparency = 1,
-		AutoButtonColor = false, Text = "", Size = UDim2.new(1, 0, 0, HEADER_H), ZIndex = 2,
-	})
-	local titleLbl = create("TextLabel", {
-		Parent = header, BackgroundTransparency = 1, Font = FONT_VALUE,
-		Text = opts.Title or (multi and "Multi Dropdown" or "Dropdown"),
-		TextColor3 = theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
-		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(0.45, -10, 1, 0), ZIndex = 2,
-	})
-	local valueLbl = create("TextLabel", {
-		Parent = header, BackgroundTransparency = 1, Font = FONT_VALUE, Text = selectionText(),
-		TextColor3 = theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Position = UDim2.new(0.45, 0, 0, 0), Size = UDim2.new(0.55, -34, 1, 0), ZIndex = 2,
-	})
-	local arrow = create("TextLabel", {
-		Parent = header, BackgroundTransparency = 1, Font = FONT_TITLE, Text = "\u{25BC}",
-		TextColor3 = theme.TextDim, TextSize = 9, TextXAlignment = Enum.TextXAlignment.Center,
-		Position = UDim2.new(1, -22, 0, 0), Size = UDim2.fromOffset(16, HEADER_H), ZIndex = 2,
-	})
-
-	-- optional description under the title
-	local descLbl
-	if descText then
-		titleLbl.TextYAlignment = Enum.TextYAlignment.Top
-		titleLbl.Position = UDim2.new(0, 10, 0, 6)
-		titleLbl.Size = UDim2.new(0.6, -10, 0, 15)
-		descLbl = create("TextLabel", {
-			Parent = header, BackgroundTransparency = 1, Font = FONT_VALUE, Text = descText,
-			TextColor3 = theme.TextMuted, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Top,
-			Position = UDim2.new(0, 10, 0, 21), Size = UDim2.new(0.6, -10, 0, 14), ZIndex = 2,
-		})
-	end
-
-	-- divider under the header, only shown while expanded
-	local divider = create("Frame", {
-		Parent = container, BackgroundColor3 = theme.Border, BorderSizePixel = 0,
-		Position = UDim2.new(0, 10, 0, HEADER_H), Size = UDim2.new(1, -20, 0, 1), Visible = false, ZIndex = 2,
-	})
-
-	-- scrolling option list, docked directly under the header inside the container
-	local listFrame = create("ScrollingFrame", {
-		Parent = container, BackgroundTransparency = 1, BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 0, HEADER_H + 1), Size = UDim2.new(1, 0, 0, 0),
-		ScrollBarThickness = 3, ScrollBarImageColor3 = theme.Border,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
-		CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 2,
-	})
-	create("UIListLayout", { Parent = listFrame, Padding = UDim.new(0, ITEM_GAP), SortOrder = Enum.SortOrder.LayoutOrder })
-	create("UIPadding", { Parent = listFrame,
-		PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
-		PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) })
-
-	addHover(header, theme.SurfaceLight, theme.SurfaceHover)
-
-	local optionButtons = {}
+	local MAX_H = 210
 	local contentHeight = 0
 
+	-- the row stays a FIXED height; the list is a floating overlay
+	local row = self:_row(ELEMENT_H)
+	local titleLbl = create("TextLabel", {
+		Parent = row, BackgroundTransparency = 1, Font = FONT_VALUE,
+		Text = opts.Title or (multi and "Multi Dropdown" or "Dropdown"),
+		TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(0.4, -10, 1, 0),
+	})
+	local selBtn = create("TextButton", {
+		Parent = row, BackgroundColor3 = self._theme.Background, BorderSizePixel = 0, Font = FONT_VALUE,
+		Text = "  " .. selectionText(), TextColor3 = self._theme.Text, TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+		AutoButtonColor = false, Position = UDim2.new(0.4, 4, 0.5, -12), Size = UDim2.new(0.6, -14, 0, 24),
+	})
+	corner(selBtn, RADIUS_SMALL)
+	stroke(selBtn, self._theme.Border, 1)
+	addHover(selBtn, self._theme.Background, self._theme.SurfaceHover)
+	local arrow = create("TextLabel", {
+		Parent = selBtn, BackgroundTransparency = 1, Font = FONT_TITLE, Text = "\u{25BC}",
+		TextColor3 = self._theme.TextDim, TextSize = 9, Position = UDim2.new(1, -18, 0, 0), Size = UDim2.fromOffset(16, 24),
+	})
+
+	-- click-catcher (full screen) + list, both parented to the top-level gui
+	local catcher = create("TextButton", {
+		Name = "DropCatcher", Parent = gui, AutoButtonColor = false, Text = "",
+		BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 300,
+	})
+	local listFrame = create("ScrollingFrame", {
+		Name = "DropList", Parent = row, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+		Size = UDim2.fromOffset(120, 0), Visible = false, ZIndex = 301, ClipsDescendants = true,
+		ScrollBarThickness = 3, ScrollBarImageColor3 = self._theme.Border,
+		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	})
+	corner(listFrame, RADIUS_SMALL)
+	stroke(listFrame, self._theme.Border, 1)
+	create("UIListLayout", { Parent = listFrame, SortOrder = Enum.SortOrder.LayoutOrder })
+
+	local optionButtons = {}
 	local function refresh()
-		valueLbl.Text = selectionText()
+		selBtn.Text = "  " .. selectionText()
 		for v, o in pairs(optionButtons) do
 			local isSel = selected[v] and true or false
-			o.title.TextColor3 = isSel and theme.Text or theme.TextDim
+			-- clean look: no blue fill; selection shown via brighter text + a check mark
+			o.button.BackgroundColor3 = self._theme.Surface
+			o.title.TextColor3 = isSel and self._theme.Text or self._theme.TextDim
 			if o.check then o.check.Text = isSel and "\u{2713}" or "" end
 		end
 	end
 
 	local open = false
-	local function listHeight()
-		return math.min(contentHeight + LIST_INSET, MAX_LIST_H)
-	end
-	local function applyOpen()
+	local slideConn
+	-- base (collapsed) row height, captured lazily on first open so it also works
+	-- when opts.Desc grew the row a little.
+	local baseRowH
+	local function listHeight() return math.min(contentHeight, MAX_H) end
+	-- INLINE MODE (non-sidebar): the option list drops DOWN inside the row and
+	-- grows the row height, pushing the rows below it down -- it is NOT a floating
+	-- overlay popup anymore. Only this dropdown's own row expands.
+	local function positionList()
+		if sidebarMode then return end
+		if not baseRowH then baseRowH = row.Size.Y.Offset end
+		local h = listHeight()
+		listFrame.Position = UDim2.new(0.4, 4, 0, baseRowH + 2)
+		listFrame.Size = UDim2.new(0.6, -14, 0, h)
 		if open then
-			local lh = listHeight()
-			listFrame.Size = UDim2.new(1, 0, 0, lh)
-			divider.Visible = true
-			arrow.Text = "\u{25B2}"
-			container.Size = UDim2.new(1, 0, 0, HEADER_H + 1 + lh)
-		else
-			divider.Visible = false
-			arrow.Text = "\u{25BC}"
-			container.Size = UDim2.new(1, 0, 0, HEADER_H)
+			row.Size = UDim2.new(1, 0, 0, baseRowH + h + 6)
 		end
 	end
 	local function closeList()
-		if open then open = false; applyOpen() end
+		open = false
+		if sidebarMode and sidebarPanel then
+			-- slide the drawer back out to the right edge, then hide it
+			sidebarPanel:TweenPosition(UDim2.new(1, sidebarW, 0, 41), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.16, true, function()
+				if not open and sidebarPanel then sidebarPanel.Visible = false end
+			end)
+		else
+			-- collapse the row back down, then hide the list once shrunk
+			if not baseRowH then baseRowH = row.Size.Y.Offset end
+			row:TweenSize(UDim2.new(1, 0, 0, baseRowH), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.15, true, function()
+				if not open then listFrame.Visible = false end
+			end)
+		end
+		catcher.Visible = false
+		arrow.Text = "\u{25BC}"
+		if slideConn then slideConn:Disconnect(); slideConn = nil end
 		if activeDropdownClose == closeList then activeDropdownClose = nil end
 	end
 	local function openList()
 		if activeDropdownClose and activeDropdownClose ~= closeList then activeDropdownClose() end
-		open = true; applyOpen()
+		open = true
+		arrow.Text = "\u{25B2}"
+		if sidebarMode and sidebarPanel then
+			-- drawer stays INSIDE the window (main clips it) and slides in from the right
+			sidebarPanel.Position = UDim2.new(1, sidebarW, 0, 41)
+			sidebarPanel.Visible = true
+			listFrame.Visible = true
+			sidebarPanel:TweenPosition(UDim2.new(1, 0, 0, 41), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+			slideConn = UserInputService.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					local p = input.Position
+					if not inRect(sidebarPanel, p.X, p.Y) and not inRect(selBtn, p.X, p.Y) then closeList() end
+				end
+			end)
+			activeDropdownClose = closeList
+			return
+		end
+		-- inline expand: clip the row so the list slides open cleanly
+		row.ClipsDescendants = true
+		if not baseRowH then baseRowH = row.Size.Y.Offset end
+		local h = listHeight()
+		listFrame.Position = UDim2.new(0.4, 4, 0, baseRowH + 2)
+		listFrame.Size = UDim2.new(0.6, -14, 0, h)
+		listFrame.Visible = true
+		row:TweenSize(UDim2.new(1, 0, 0, baseRowH + h + 6), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.15, true)
 		activeDropdownClose = closeList
 	end
 
 	local function rebuild()
+		-- clear old rows (keep the UIListLayout), then recreate from `entries`
 		for _, c in ipairs(listFrame:GetChildren()) do
-			if not (c:IsA("UIListLayout") or c:IsA("UIPadding")) then c:Destroy() end
+			if not c:IsA("UIListLayout") then c:Destroy() end
 		end
 		optionButtons = {}
 		contentHeight = 0
 		for i, entry in ipairs(entries) do
-			if entry.divider then
+			local hidden = sidebarMode and searchQuery ~= "" and not entry.divider
+				and not string.find(string.lower(entry.title or ""), searchQuery, 1, true)
+			if hidden then
+				-- filtered out by the search box; skip rendering this entry
+			elseif entry.divider then
 				local dh = entry.title and 24 or 9
 				local dframe = create("Frame", {
-					Parent = listFrame, BackgroundTransparency = 1, BorderSizePixel = 0,
-					Size = UDim2.new(1, 0, 0, dh), LayoutOrder = i, ZIndex = 2,
+					Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+					Size = UDim2.new(1, 0, 0, dh), LayoutOrder = i, ZIndex = 302,
 				})
-				create("Frame", {
-					Parent = dframe, BackgroundColor3 = theme.Border, BorderSizePixel = 0,
-					Position = UDim2.new(0, 6, entry.title and 1 or 0.5, entry.title and -1 or 0),
-					Size = UDim2.new(1, -12, 0, 1), ZIndex = 2,
+				create("Frame", { -- thin separator line
+					Parent = dframe, BackgroundColor3 = self._theme.Border, BorderSizePixel = 0,
+					Position = UDim2.new(0, 8, entry.title and 1 or 0.5, entry.title and -1 or 0),
+					Size = UDim2.new(1, -16, 0, 1), ZIndex = 303,
 				})
 				if entry.title then
 					create("TextLabel", {
 						Parent = dframe, BackgroundTransparency = 1, Font = FONT_TITLE, Text = string.upper(entry.title),
-						TextColor3 = theme.TextMuted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
-						TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.new(0, 6, 0, 3),
-						Size = UDim2.new(1, -12, 0, dh - 6), ZIndex = 2,
+						TextColor3 = self._theme.TextMuted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
+						TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.new(0, 8, 0, 3),
+						Size = UDim2.new(1, -16, 0, dh - 6), ZIndex = 303,
 					})
 				end
-				contentHeight = contentHeight + dh + ITEM_GAP
+				contentHeight = contentHeight + dh
 			else
 				local v = entry.value
 				local h = entry.desc and (OPT_H + DESC_EXTRA) or OPT_H
 				local ob = create("TextButton", {
-					Parent = listFrame, BackgroundColor3 = theme.SurfaceLight, BorderSizePixel = 0, Text = "",
-					AutoButtonColor = false, Size = UDim2.new(1, 0, 0, h), LayoutOrder = i, ZIndex = 2,
+					Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0, Text = "",
+					AutoButtonColor = false, Size = UDim2.new(1, 0, 0, h), LayoutOrder = i, ZIndex = 302,
 				})
-				corner(ob, RADIUS_SMALL)
 				local textX = 10
 				local ri = resolveIcon(entry.icon)
 				if ri and ri.glyph then
 					create("TextLabel", {
 						Parent = ob, BackgroundTransparency = 1, Font = FONT_VALUE, Text = ri.glyph,
-						TextColor3 = theme.TextDim, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Center,
-						Position = UDim2.new(0, 6, 0, 0), Size = UDim2.new(0, 18, 0, OPT_H), ZIndex = 2,
+						TextColor3 = self._theme.TextDim, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Center,
+						Position = UDim2.new(0, 6, 0, 0), Size = UDim2.new(0, 18, 0, OPT_H), ZIndex = 303,
 					})
 					textX = 28
 				elseif ri and ri.image then
 					create("ImageLabel", {
 						Parent = ob, BackgroundTransparency = 1, Image = ri.image, AnchorPoint = Vector2.new(0, 0.5),
-						Position = UDim2.new(0, 8, 0, OPT_H / 2), Size = UDim2.fromOffset(16, 16), ZIndex = 2,
+						Position = UDim2.new(0, 8, 0, OPT_H / 2), Size = UDim2.fromOffset(16, 16), ZIndex = 303,
 					})
 					textX = 30
 				end
 				local titleLabel = create("TextLabel", {
 					Parent = ob, BackgroundTransparency = 1, Font = FONT_VALUE, Text = entry.title,
-					TextColor3 = theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
-					Position = UDim2.new(0, textX, 0, 0), Size = UDim2.new(1, -textX - 24, 0, entry.desc and 18 or OPT_H), ZIndex = 2,
+					TextColor3 = self._theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+					Position = UDim2.new(0, textX, 0, 0), Size = UDim2.new(1, -textX - 24, 0, entry.desc and 18 or OPT_H),
+					ZIndex = 303,
 				})
 				if entry.desc then
 					titleLabel.Position = UDim2.new(0, textX, 0, 5)
 					titleLabel.TextYAlignment = Enum.TextYAlignment.Bottom
 					create("TextLabel", {
 						Parent = ob, BackgroundTransparency = 1, Font = FONT_VALUE, Text = entry.desc,
-						TextColor3 = theme.TextMuted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
+						TextColor3 = self._theme.TextMuted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left,
 						TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true,
-						Position = UDim2.new(0, textX, 0, 24), Size = UDim2.new(1, -textX - 24, 0, DESC_EXTRA + 2), ZIndex = 2,
+						Position = UDim2.new(0, textX, 0, 24), Size = UDim2.new(1, -textX - 24, 0, DESC_EXTRA + 2), ZIndex = 303,
 					})
 				end
 				local check = create("TextLabel", {
 					Name = "Check", Parent = ob, BackgroundTransparency = 1, Font = FONT_TITLE,
-					Text = selected[v] and "\u{2713}" or "", TextColor3 = theme.Accent, TextSize = 13,
-					Position = UDim2.new(1, -20, 0, 0), Size = UDim2.new(0, 16, 1, 0), ZIndex = 2,
+					Text = selected[v] and "\u{2713}" or "", TextColor3 = self._theme.Accent, TextSize = 13,
+					Position = UDim2.new(1, -20, 0, 0), Size = UDim2.new(0, 16, 1, 0), ZIndex = 303,
 				})
 				optionButtons[v] = { button = ob, title = titleLabel, check = check }
-				addHover(ob, theme.SurfaceLight, theme.SurfaceHover)
+				addHover(ob, self._theme.Surface, self._theme.SurfaceHover)
 				ob.MouseButton1Click:Connect(function()
 					if multi then
 						if selected[v] then
@@ -1889,17 +1909,63 @@ function Section:_buildDropdown(opts, multi)
 						autoSaveTrigger()
 					end
 				end)
-				contentHeight = contentHeight + h + ITEM_GAP
+				contentHeight = contentHeight + h
 			end
 		end
 		refresh()
-		if open then applyOpen() end
+		if open then positionList() end
 	end
 	rebuild()
 
-	header.MouseButton1Click:Connect(function()
+	-- SIDEBAR MODE build: dock the list to the right of the window + search box on top
+	if sidebarMode then
+		local mainFrame = (self._window and self._window._main) or gui
+		sidebarPanel = create("Frame", {
+			Name = "DropSidebar", Parent = mainFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, sidebarW, 0, 41),
+			Size = UDim2.new(0, sidebarW, 1, -41), Visible = false, ZIndex = 50, ClipsDescendants = true,
+		})
+		corner(sidebarPanel, RADIUS_LARGE)
+		stroke(sidebarPanel, self._theme.Border, 1)
+		create("TextLabel", {
+			Parent = sidebarPanel, BackgroundTransparency = 1, Font = FONT_TITLE,
+			Text = opts.Title or (multi and "Multi Select" or "Select"),
+			TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.new(0, 12, 0, 10), Size = UDim2.new(1, -24, 0, 16), ZIndex = 302,
+		})
+		local searchHolder = create("Frame", {
+			Parent = sidebarPanel, BackgroundColor3 = self._theme.Background, BorderSizePixel = 0,
+			Position = UDim2.new(0, 10, 0, 34), Size = UDim2.new(1, -20, 0, 28), ZIndex = 302,
+		})
+		corner(searchHolder, RADIUS_SMALL)
+		stroke(searchHolder, self._theme.Border, 1)
+		create("TextLabel", {
+			Parent = searchHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = "\u{1F50D}",
+			TextColor3 = self._theme.TextMuted, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Center,
+			Position = UDim2.new(0, 6, 0, 0), Size = UDim2.fromOffset(18, 28), ZIndex = 303,
+		})
+		searchBox = create("TextBox", {
+			Parent = searchHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = "",
+			PlaceholderText = "Search...", PlaceholderColor3 = self._theme.TextMuted,
+			TextColor3 = self._theme.Text, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+			ClearTextOnFocus = false, ClipsDescendants = true,
+			Position = UDim2.new(0, 28, 0, 0), Size = UDim2.new(1, -36, 1, 0), ZIndex = 303,
+		})
+		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			searchQuery = string.lower(searchBox.Text)
+			rebuild()
+		end)
+		-- dock the option list under the search box, filling the rest of the panel
+		listFrame.Parent = sidebarPanel
+		listFrame.Position = UDim2.new(0, 10, 0, 70)
+		listFrame.Size = UDim2.new(1, -20, 1, -80)
+		listFrame.ZIndex = 302
+	end
+
+	selBtn.MouseButton1Click:Connect(function()
 		if open then closeList() else openList() end
 	end)
+	catcher.MouseButton1Click:Connect(closeList)
 
 	local function sameList(a, b)
 		if #a ~= #b then return false end
@@ -1921,7 +1987,7 @@ function Section:_buildDropdown(opts, multi)
 
 	local handle = {
 		Type = multi and "MultiDropdown" or "Dropdown",
-		Id = opts.Id, Instance = container, Multi = multi,
+		Id = opts.Id, Instance = row, Multi = multi,
 		Get = function() return selectionValue() end,
 		Set = function(val)
 			for k in pairs(selected) do selected[k] = nil end
@@ -1938,7 +2004,8 @@ function Section:_buildDropdown(opts, multi)
 		Callback  = callback,
 	}
 	handle.Select = handle.Set
-	attachCommon(handle, container, titleLbl, descLbl)
+	local descLbl = applyDesc(row, titleLbl, opts.Desc or opts.Description, self._theme)
+	attachCommon(handle, row, titleLbl, descLbl)
 	registerElement(opts.Id, handle)
 	pcall(callback, selectionValue())
 
@@ -1948,7 +2015,7 @@ function Section:_buildDropdown(opts, multi)
 	if type(opts.Refresh) == "function" then
 		local interval = opts.RefreshInterval or 1
 		task.spawn(function()
-			while container and container.Parent do
+			while row and row.Parent do
 				local ok, newValues = pcall(opts.Refresh)
 				if ok and type(newValues) == "table" then
 					local _, newVList = normalize(newValues)
