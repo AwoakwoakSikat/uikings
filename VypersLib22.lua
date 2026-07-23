@@ -1718,7 +1718,7 @@ function Section:_buildDropdown(opts, multi)
 		BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 300,
 	})
 	local listFrame = create("ScrollingFrame", {
-		Name = "DropList", Parent = gui, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+		Name = "DropList", Parent = row, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
 		Size = UDim2.fromOffset(120, 0), Visible = false, ZIndex = 301, ClipsDescendants = true,
 		ScrollBarThickness = 3, ScrollBarImageColor3 = self._theme.Border,
 		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -1741,31 +1741,24 @@ function Section:_buildDropdown(opts, multi)
 	end
 
 	local open = false
-	local posConn
-	-- NORMAL (popup) dropdown: a floating list that drops straight DOWN from the
-	-- clicked dropdown's OWN row, re-glued every frame so it never drifts. It may
-	-- overlap the rows below -- that's fine, it's a popup. SIDEBAR mode still uses
-	-- the right-side drawer.
+	local baseRowH
+	local closeConn
+	-- NORMAL (inline) dropdown: the list expands DOWNWARD inside its own row and
+	-- pushes the rows below it down (UIListLayout reflow), so it never floats over
+	-- or covers other elements. SIDEBAR mode still uses the right-side drawer.
 	local function positionList()
 		if sidebarMode then return end
+		if not baseRowH then baseRowH = row.Size.Y.Offset end
 		local listH = math.min(contentHeight, MAX_H)
-		local x = selBtn.AbsolutePosition.X
-		local w = selBtn.AbsoluteSize.X
-		local below = row.AbsolutePosition.Y + row.AbsoluteSize.Y + 2
-		local y = below
-		local vpY = gui.AbsoluteSize.Y
-		if below + listH > vpY - 6 then
-			local above = row.AbsolutePosition.Y - listH - 2
-			if above >= 6 then y = above end
-		end
-		listFrame.Position = UDim2.fromOffset(x, y)
-		listFrame.Size = UDim2.fromOffset(w, listH)
+		listFrame.Position = UDim2.new(0, 10, 0, baseRowH)
+		listFrame.Size = UDim2.new(1, -20, 0, listH)
+		row.Size = UDim2.new(1, 0, 0, baseRowH + listH + 8)
 	end
 	local function closeList()
 		open = false
 		arrow.Text = "\u{25BC}"
 		catcher.Visible = false
-		if posConn then posConn:Disconnect(); posConn = nil end
+		if closeConn then closeConn:Disconnect(); closeConn = nil end
 		if sidebarMode and sidebarPanel then
 			-- slide the drawer back out to the right edge, then hide it
 			sidebarPanel:TweenPosition(UDim2.new(1, sidebarW, 0, 41), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.16, true, function()
@@ -1773,6 +1766,7 @@ function Section:_buildDropdown(opts, multi)
 			end)
 		else
 			listFrame.Visible = false
+			if baseRowH then row.Size = UDim2.new(1, 0, 0, baseRowH) end
 		end
 		if activeDropdownClose == closeList then activeDropdownClose = nil end
 	end
@@ -1786,7 +1780,7 @@ function Section:_buildDropdown(opts, multi)
 			sidebarPanel.Visible = true
 			listFrame.Visible = true
 			sidebarPanel:TweenPosition(UDim2.new(1, 0, 0, 41), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
-			posConn = UserInputService.InputBegan:Connect(function(input)
+			closeConn = UserInputService.InputBegan:Connect(function(input)
 				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 					local p = input.Position
 					if not inRect(sidebarPanel, p.X, p.Y) and not inRect(selBtn, p.X, p.Y) then closeList() end
@@ -1795,11 +1789,15 @@ function Section:_buildDropdown(opts, multi)
 			activeDropdownClose = closeList
 			return
 		end
-		-- popup: float the list right under the row, then keep it glued each frame
-		positionList()
+		-- inline: reveal the list right under the button and grow the row
 		listFrame.Visible = true
-		catcher.Visible = true
-		posConn = RunService.RenderStepped:Connect(positionList)
+		positionList()
+		closeConn = UserInputService.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				local p = input.Position
+				if not inRect(listFrame, p.X, p.Y) and not inRect(selBtn, p.X, p.Y) then closeList() end
+			end
+		end)
 		activeDropdownClose = closeList
 	end
 
