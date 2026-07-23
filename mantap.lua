@@ -254,14 +254,39 @@ function Vypers:LoadConfig(name)
 
 	for id, val in pairs(data) do
 		local el = self._elements[id]
-		if el and el.Set then pcall(el.Set, val) end
+		if el and el.Set then
+			pcall(el.Set, val)
+			-- re-fire the element's callback so restored state actually takes effect
+			-- (e.g. an Auto Farm toggle => the farm loop starts again). Keybinds are
+			-- intentionally excluded so we never trigger their bound action on load.
+			if el.Callback then
+				local arg = val
+				if el.Get then
+					local okg, g = pcall(el.Get)
+					if okg then arg = g end
+				end
+				pcall(el.Callback, arg)
+			end
+		end
 	end
 	return true
 end
 
-function Vypers:AutoSave(state)
+function Vypers:AutoSave(state, name)
 	self._autoSave = state and true or false
+	if name then self._configName = name end
 	return self._autoSave
+end
+
+-- convenience: restore the last saved config (applies values AND fires callbacks,
+-- so e.g. a saved "Auto Farm" toggle turns back ON and actually runs), then turn
+-- on auto-save. Call this LAST, after the whole UI has been built.
+function Vypers:EnableConfig(name)
+	name = name or "default"
+	self._configName = name
+	local ok = self:LoadConfig(name)   -- ignores "not found" on the very first run
+	self:AutoSave(true)
+	return ok
 end
 
 function Vypers:SetFolder(folder) self._folder = folder or "Vypers" end
@@ -1032,6 +1057,7 @@ function Section:CreateToggle(opts)
 	local handle = {
 		Type = "Toggle", Id = opts.Id, Instance = row,
 		Get = function() return state end, Set = function(v) set(v, true) end,
+		Callback = callback,
 	}
 	registerElement(opts.Id, handle)
 	if state then pcall(callback, state) end
@@ -1107,6 +1133,7 @@ function Section:CreateSlider(opts)
 	local handle = {
 		Type = "Slider", Id = opts.Id, Instance = row,
 		Get = function() return value end, Set = function(v) set(v, true) end,
+		Callback = callback,
 	}
 	registerElement(opts.Id, handle)
 	pcall(callback, value)
@@ -1141,6 +1168,7 @@ function Section:CreateInput(opts)
 	local handle = {
 		Type = "Input", Id = opts.Id, Instance = row,
 		Get = function() return box.Text end, Set = function(v) box.Text = tostring(v) end,
+		Callback = callback,
 	}
 	registerElement(opts.Id, handle)
 	return handle
@@ -1384,6 +1412,7 @@ function Section:_buildDropdown(opts, multi)
 		SetValues = setValues,   -- handle.SetValues({ "A", "B" })
 		Refresh   = setValues,   -- alias
 		GetValues = function() return values end,
+		Callback  = callback,
 	}
 	registerElement(opts.Id, handle)
 	pcall(callback, selectionValue())
@@ -1658,5 +1687,13 @@ cs:CreateButton({ Title = "Save Config",
 cs:CreateButton({ Title = "Load Config",
 	Callback = function() Vypers:LoadConfig("default"); Vypers:Notify({ Title = "Loaded", Type = "info" }) end })
 cs:CreateToggle({ Title = "Auto Save", Default = false, Callback = function(s) Vypers:AutoSave(s) end })
+
+-- ============== PERSISTENT AUTO-SAVE (the important part) ==============
+-- Call this LAST, AFTER every tab / section / element has been created.
+-- First run: no saved file yet, so nothing happens.
+-- After the user flips e.g. "Auto Farm" ON, it is saved automatically. Next time
+-- they execute the script, EnableConfig restores it AND fires the callback, so
+-- Auto Farm turns back ON and actually starts by itself.
+Vypers:EnableConfig("myconfig")
 
 ================================================================ ]]
