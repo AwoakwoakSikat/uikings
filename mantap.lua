@@ -1302,44 +1302,68 @@ function Section:_buildDropdown(opts, multi)
 		activeDropdownClose = closeList
 	end
 
-	for i, v in ipairs(values) do
-		local ob = create("TextButton", {
-			Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0, Font = FONT_VALUE,
-			Text = "  " .. tostring(v), TextColor3 = self._theme.TextDim, TextSize = 12,
-			TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
-			Size = UDim2.new(1, 0, 0, OPT_H), LayoutOrder = i, ZIndex = 302,
-		})
-		if multi then
-			create("TextLabel", {
-				Name = "Check", Parent = ob, BackgroundTransparency = 1, Font = FONT_TITLE,
-				Text = selected[v] and "\u{2713}" or "", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 12,
-				Position = UDim2.new(1, -20, 0, 0), Size = UDim2.fromOffset(16, OPT_H), ZIndex = 303,
+	local function rebuild()
+		-- clear old option buttons, then recreate from the current `values`
+		for _, b in pairs(optionButtons) do b:Destroy() end
+		optionButtons = {}
+		for i, v in ipairs(values) do
+			local ob = create("TextButton", {
+				Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0, Font = FONT_VALUE,
+				Text = "  " .. tostring(v), TextColor3 = self._theme.TextDim, TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
+				Size = UDim2.new(1, 0, 0, OPT_H), LayoutOrder = i, ZIndex = 302,
 			})
-		end
-		optionButtons[v] = ob
-		addHover(ob, self._theme.Surface, self._theme.SurfaceHover)
-		ob.MouseButton1Click:Connect(function()
 			if multi then
-				selected[v] = (not selected[v]) or nil
-				refresh()
-				pcall(callback, selectionValue())
-				autoSaveTrigger()
-			else
-				for k in pairs(selected) do selected[k] = nil end
-				selected[v] = true
-				refresh()
-				closeList()
-				pcall(callback, selectionValue())
-				autoSaveTrigger()
+				create("TextLabel", {
+					Name = "Check", Parent = ob, BackgroundTransparency = 1, Font = FONT_TITLE,
+					Text = selected[v] and "\u{2713}" or "", TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 12,
+					Position = UDim2.new(1, -20, 0, 0), Size = UDim2.fromOffset(16, OPT_H), ZIndex = 303,
+				})
 			end
-		end)
+			optionButtons[v] = ob
+			addHover(ob, self._theme.Surface, self._theme.SurfaceHover)
+			ob.MouseButton1Click:Connect(function()
+				if multi then
+					selected[v] = (not selected[v]) or nil
+					refresh()
+					pcall(callback, selectionValue())
+					autoSaveTrigger()
+				else
+					for k in pairs(selected) do selected[k] = nil end
+					selected[v] = true
+					refresh()
+					closeList()
+					pcall(callback, selectionValue())
+					autoSaveTrigger()
+				end
+			end)
+		end
+		refresh()
+		if open then positionList() end
 	end
-	refresh()
+	rebuild()
 
 	selBtn.MouseButton1Click:Connect(function()
 		if open then closeList() else openList() end
 	end)
 	catcher.MouseButton1Click:Connect(closeList)
+
+	local function sameList(a, b)
+		if #a ~= #b then return false end
+		for i = 1, #a do if tostring(a[i]) ~= tostring(b[i]) then return false end end
+		return true
+	end
+	-- swap the option list at runtime; by default prunes selections that no longer exist
+	local function setValues(newValues, keepSelection)
+		newValues = newValues or {}
+		values = newValues
+		if not keepSelection then
+			local valid = {}
+			for _, v in ipairs(values) do valid[v] = true end
+			for k in pairs(selected) do if not valid[k] then selected[k] = nil end end
+		end
+		rebuild()
+	end
 
 	local handle = {
 		Type = multi and "MultiDropdown" or "Dropdown",
@@ -1354,9 +1378,29 @@ function Section:_buildDropdown(opts, multi)
 			end
 			refresh()
 		end,
+		SetValues = setValues,   -- handle.SetValues({ "A", "B" })
+		Refresh   = setValues,   -- alias
+		GetValues = function() return values end,
 	}
 	registerElement(opts.Id, handle)
 	pcall(callback, selectionValue())
+
+	-- built-in AUTO-REFRESH: pass opts.Refresh = function() return { ... } end
+	-- the list re-polls every opts.RefreshInterval seconds (default 1) and only
+	-- rebuilds when the returned list actually changed (e.g. players join/leave).
+	if type(opts.Refresh) == "function" then
+		local interval = opts.RefreshInterval or 1
+		task.spawn(function()
+			while row and row.Parent do
+				local ok, newValues = pcall(opts.Refresh)
+				if ok and type(newValues) == "table" and not sameList(newValues, values) then
+					setValues(newValues, true)
+				end
+				task.wait(interval)
+			end
+		end)
+	end
+
 	return handle
 end
 
@@ -1555,6 +1599,22 @@ inputs:CreateDropdown({ Id = "mode", Title = "Select Mode",
 inputs:CreateMultiDropdown({ Id = "targets", Title = "ESP Targets",
 	Values = { "Players", "NPCs", "Items", "Chests", "Boss" }, Default = { "Players" },
 	Callback = function(list) print("Targets:", table.concat(list, ", ")) end })
+
+-- AUTO-REFRESH dropdown: list updates itself when players join / leave
+local Players = game:GetService("Players")
+local function playerNames()
+	local names = {}
+	for _, p in ipairs(Players:GetPlayers()) do table.insert(names, p.Name) end
+	return names
+end
+local targetDrop = inputs:CreateDropdown({ Id = "targetplayer", Title = "Target Player",
+	Values = playerNames(),
+	Refresh = playerNames,   -- polled automatically (default every 1s)
+	RefreshInterval = 1,
+	Callback = function(v) print("Target player:", v) end })
+-- (manual alternative, if you prefer event-driven instead of polling:)
+-- Players.PlayerAdded:Connect(function() targetDrop.SetValues(playerNames(), true) end)
+-- Players.PlayerRemoving:Connect(function() task.defer(function() targetDrop.SetValues(playerNames(), true) end) end)
 
 inputs:CreateColorPicker({ Id = "espcolor", Title = "ESP Color", Default = Color3.fromRGB(91, 155, 213),
 	Callback = function(c) print("Color:", c) end })
