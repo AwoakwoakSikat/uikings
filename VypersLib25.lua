@@ -1712,18 +1712,11 @@ function Section:_buildDropdown(opts, multi)
 		TextColor3 = self._theme.TextDim, TextSize = 9, Position = UDim2.new(1, -18, 0, 0), Size = UDim2.fromOffset(16, 24),
 	})
 
-	-- click-catcher (full screen) + shadow + list, all parented to the top-level gui
+	-- click-catcher (full screen) + list, both parented to the top-level gui
 	local catcher = create("TextButton", {
 		Name = "DropCatcher", Parent = gui, AutoButtonColor = false, Text = "",
 		BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 300,
 	})
-	-- soft drop shadow behind the list so it reads as one solid panel grouped
-	-- with the field that was clicked
-	local listShadow = create("Frame", {
-		Name = "DropShadow", Parent = gui, BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.55, BorderSizePixel = 0, Visible = false, ZIndex = 300,
-	})
-	corner(listShadow, RADIUS_SMALL + 2)
 	local listFrame = create("ScrollingFrame", {
 		Name = "DropList", Parent = gui, BackgroundColor3 = self._theme.Surface, BackgroundTransparency = 0,
 		BorderSizePixel = 0, Size = UDim2.fromOffset(120, 0), Visible = false, ZIndex = 301, ClipsDescendants = true,
@@ -1776,14 +1769,11 @@ function Section:_buildDropdown(opts, multi)
 		end
 		listFrame.Position = UDim2.fromOffset(fx, top)
 		listFrame.Size = UDim2.fromOffset(fw, listH)
-		listShadow.Position = UDim2.fromOffset(fx - 2, top + 2)
-		listShadow.Size = UDim2.fromOffset(fw + 4, listH + 4)
 	end
 	local function closeList()
 		open = false
 		arrow.Text = "\u{25BC}"
 		catcher.Visible = false
-		listShadow.Visible = false
 		if posConn then posConn:Disconnect(); posConn = nil end
 		if sidebarMode and sidebarPanel then
 			-- slide the drawer back out to the right edge, then hide it
@@ -1817,7 +1807,6 @@ function Section:_buildDropdown(opts, multi)
 		-- popup: float the list right under the row, then keep it glued each frame
 		listFrame.Visible = true
 		catcher.Visible = true
-		listShadow.Visible = true
 		positionList()
 		posConn = RunService.RenderStepped:Connect(positionList)
 		activeDropdownClose = closeList
