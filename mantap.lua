@@ -53,14 +53,14 @@ local FONT_TITLE = Enum.Font.GothamBold  -- titles
 local FONT_VALUE = Enum.Font.Gotham      -- values / body
 local FONT_CODE  = Enum.Font.Code        -- code blocks
 
-local RADIUS_LARGE = 6 -- most elements
-local RADIUS_SMALL = 4 -- small elements
+local RADIUS_LARGE = 8 -- most elements
+local RADIUS_SMALL = 5 -- small elements
 
-local PADDING      = 8
-local ELEMENT_H    = 34 -- default element height
-local HEADER_H     = 32 -- section header height
+local PADDING      = 10
+local ELEMENT_H    = 36 -- default element height
+local HEADER_H     = 38 -- section header height
 
-local WINDOW_TRANSPARENCY = 0.85 -- 85% transparent window background (glass look)
+local WINDOW_TRANSPARENCY = 0.2 -- 20% transparent window background (subtle glass)
 
 -- =====================================================================
 --  SIMPLE ICON SET (unicode glyphs -- no external image dependencies)
@@ -500,26 +500,36 @@ function Vypers:CreateWindow(opts)
 	-- ---- title bar ---------------------------------------------------
 	local titleBar = create("Frame", {
 		Name = "TitleBar", Parent = main, BackgroundColor3 = self._theme.Surface,
-		BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 40),
+		BackgroundTransparency = WINDOW_TRANSPARENCY, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 40),
 	})
 	corner(titleBar, RADIUS_LARGE)
 	create("Frame", { -- mask bottom corners
-		Parent = titleBar, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, RADIUS_LARGE), Position = UDim2.new(0, 0, 1, -RADIUS_LARGE),
+		Parent = titleBar, BackgroundColor3 = self._theme.Surface, BackgroundTransparency = WINDOW_TRANSPARENCY,
+		BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, RADIUS_LARGE), Position = UDim2.new(0, 0, 1, -RADIUS_LARGE),
 	})
-	local titleLabel = create("TextLabel", {
-		Parent = titleBar, BackgroundTransparency = 1, Font = FONT_TITLE, Text = title,
-		TextColor3 = self._theme.Text, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left,
-		Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0.6, 0, 1, 0),
+	-- title + version sit together on the left, like a page title
+	local titleHolder = create("Frame", {
+		Parent = titleBar, BackgroundTransparency = 1,
+		Position = UDim2.new(0, 14, 0, 0), Size = UDim2.new(1, -114, 1, 0),
 	})
-	local subLabel = create("TextLabel", {
-		Parent = titleBar, BackgroundTransparency = 1, Font = FONT_VALUE, Text = subtitle,
-		TextColor3 = self._theme.TextDim, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
-		Position = UDim2.new(0, 14 + titleLabel.TextBounds.X + 8, 0, 1), Size = UDim2.new(0.4, 0, 1, 0),
+	create("UIListLayout", {
+		Parent = titleHolder, FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 8),
+		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
-	task.defer(function()
-		subLabel.Position = UDim2.new(0, 14 + titleLabel.TextBounds.X + 8, 0, 1)
-	end)
+	create("TextLabel", {
+		Parent = titleHolder, BackgroundTransparency = 1, Font = FONT_TITLE, Text = title,
+		TextColor3 = self._theme.Text, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Left,
+		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 1, 0), LayoutOrder = 1,
+	})
+	if subtitle ~= "" then
+		create("TextLabel", {
+			Parent = titleHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = subtitle,
+			TextColor3 = self._theme.TextMuted, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center, AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.new(0, 0, 0, 15), LayoutOrder = 2,
+		})
+	end
 
 	local function makeCtrlButton(char, xOffset, hoverColor)
 		local b = create("TextButton", {
@@ -537,7 +547,7 @@ function Vypers:CreateWindow(opts)
 	-- ---- sidebar (vertical, scrollable) — holds the tabs -------------
 	local SIDEBAR_W = 150
 	local sidebar = create("ScrollingFrame", {
-		Name = "Sidebar", Parent = main, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+		Name = "Sidebar", Parent = main, BackgroundColor3 = self._theme.Surface, BackgroundTransparency = 1, BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 40), Size = UDim2.new(0, SIDEBAR_W, 1, -40),
 		ScrollBarThickness = 3, ScrollBarImageColor3 = self._theme.Border,
 		ScrollingDirection = Enum.ScrollingDirection.Y, CanvasSize = UDim2.new(0, 0, 0, 0),
@@ -687,9 +697,10 @@ function Window:CreateTab(opts)
 	elseif icon and type(icon) == "string" and #icon <= 2 then iconText = icon .. "  " end
 
 	local btn = create("TextButton", {
-		Name = "Tab_" .. title, Parent = self._sidebar, BackgroundColor3 = theme.Surface, BorderSizePixel = 0,
+		Name = "Tab_" .. title, Parent = self._sidebar, BackgroundColor3 = theme.SurfaceHover,
+		BackgroundTransparency = 1, BorderSizePixel = 0,
 		Text = iconText .. title, Font = FONT_TITLE, TextColor3 = theme.TextDim, TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 30),
+		TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false, Size = UDim2.new(1, 0, 0, 34),
 	})
 	corner(btn, RADIUS_SMALL)
 	create("UIPadding", { Parent = btn, PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 10) })
@@ -716,11 +727,12 @@ function Window:CreateTab(opts)
 		if activeDropdownClose then activeDropdownClose() end
 		for _, t in ipairs(self._tabs) do
 			t._page.Visible = false
-			t._btn.BackgroundColor3 = theme.Surface
+			t._btn.BackgroundTransparency = 1
 			t._btn.TextColor3 = theme.TextDim
 		end
 		page.Visible = true
 		btn.BackgroundColor3 = theme.Accent
+		btn.BackgroundTransparency = 0
 		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		self._activeTab = self_tab
 	end
@@ -728,10 +740,13 @@ function Window:CreateTab(opts)
 
 	btn.MouseButton1Click:Connect(activate)
 	btn.MouseEnter:Connect(function()
-		if self._activeTab ~= self_tab then btn.BackgroundColor3 = theme.SurfaceHover end
+		if self._activeTab ~= self_tab then
+			btn.BackgroundColor3 = theme.SurfaceHover
+			btn.BackgroundTransparency = 0
+		end
 	end)
 	btn.MouseLeave:Connect(function()
-		if self._activeTab ~= self_tab then btn.BackgroundColor3 = theme.Surface end
+		if self._activeTab ~= self_tab then btn.BackgroundTransparency = 1 end
 	end)
 
 	table.insert(self._tabs, self_tab)
@@ -769,8 +784,8 @@ function Tab:CreateSection(opts)
 	})
 	create("TextLabel", {
 		Parent = header, BackgroundTransparency = 1, Font = FONT_TITLE, Text = title,
-		TextColor3 = theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
-		Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(1, -40, 1, 0),
+		TextColor3 = theme.Text, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.new(0, 14, 0, 0), Size = UDim2.new(1, -44, 1, 0),
 	})
 
 	local body = create("Frame", {
@@ -778,9 +793,9 @@ function Tab:CreateSection(opts)
 		AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1,
 	})
 	create("UIListLayout", { Parent = body, FillDirection = Enum.FillDirection.Vertical,
-		Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
-	create("UIPadding", { Parent = body, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 10),
-		PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) })
+		Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder })
+	create("UIPadding", { Parent = body, PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 12),
+		PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) })
 
 	local open = true
 	header.MouseButton1Click:Connect(function()
