@@ -523,12 +523,15 @@ function Vypers:CreateWindow(opts)
 		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 1, 0), LayoutOrder = 1,
 	})
 	if subtitle ~= "" then
-		create("TextLabel", {
-			Parent = titleHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = subtitle,
-			TextColor3 = self._theme.TextMuted, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Center, AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.new(0, 0, 0, 15), LayoutOrder = 2,
+		-- version rendered as a rounded badge/pill next to the title
+		local verBadge = create("TextLabel", {
+			Parent = titleHolder, BackgroundColor3 = self._theme.Accent, BorderSizePixel = 0,
+			Font = FONT_TITLE, Text = subtitle, TextColor3 = Color3.fromRGB(255, 255, 255), TextSize = 11,
+			TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center,
+			AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 0, 18), LayoutOrder = 2,
 		})
+		corner(verBadge, 9)
+		create("UIPadding", { Parent = verBadge, PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) })
 	end
 
 	local function makeCtrlButton(char, xOffset, hoverColor)
