@@ -1621,6 +1621,7 @@ function Section:_buildDropdown(opts, multi)
 	-- SIDEBAR MODE state (opts.Sidebar = true): render the option list as a panel
 	-- docked to the right of the window with a search box, instead of an overlay.
 	local sidebarMode = opts.Sidebar == true
+	local sidebarW = 210
 	local searchQuery = ""
 	local sidebarPanel, searchBox
 
@@ -1742,39 +1743,49 @@ function Section:_buildDropdown(opts, multi)
 	local open = false
 	local posConn
 	local function positionList()
-		if sidebarMode then
-			local win = self._window
-			local mainFrame = win and win._main
-			if mainFrame and sidebarPanel then
-				local gap = 8
-				local vpX = gui.AbsoluteSize.X
-				local px = mainFrame.AbsolutePosition.X + mainFrame.AbsoluteSize.X + gap
-				if px + 220 > vpX then px = mainFrame.AbsolutePosition.X - 220 - gap end
-				sidebarPanel.Position = UDim2.fromOffset(px, mainFrame.AbsolutePosition.Y)
-				sidebarPanel.Size = UDim2.fromOffset(220, mainFrame.AbsoluteSize.Y)
-			end
-			return
-		end
+		if sidebarMode then return end
 		listFrame.Position = UDim2.fromOffset(selBtn.AbsolutePosition.X, selBtn.AbsolutePosition.Y + selBtn.AbsoluteSize.Y + 2)
 		listFrame.Size = UDim2.fromOffset(selBtn.AbsoluteSize.X, math.min(contentHeight, MAX_H))
 	end
+	local slideConn
 	local function closeList()
 		open = false
-		listFrame.Visible = false
+		if sidebarMode and sidebarPanel then
+			-- slide the drawer back out to the right edge, then hide it
+			sidebarPanel:TweenPosition(UDim2.new(1, sidebarW, 0, 41), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.16, true, function()
+				if not open and sidebarPanel then sidebarPanel.Visible = false end
+			end)
+		else
+			listFrame.Visible = false
+		end
 		catcher.Visible = false
-		if sidebarPanel then sidebarPanel.Visible = false end
 		arrow.Text = "\u{25BC}"
 		if posConn then posConn:Disconnect(); posConn = nil end
+		if slideConn then slideConn:Disconnect(); slideConn = nil end
 		if activeDropdownClose == closeList then activeDropdownClose = nil end
 	end
 	local function openList()
 		if activeDropdownClose and activeDropdownClose ~= closeList then activeDropdownClose() end
 		open = true
+		arrow.Text = "\u{25B2}"
+		if sidebarMode and sidebarPanel then
+			-- drawer stays INSIDE the window (main clips it) and slides in from the right
+			sidebarPanel.Position = UDim2.new(1, sidebarW, 0, 41)
+			sidebarPanel.Visible = true
+			listFrame.Visible = true
+			sidebarPanel:TweenPosition(UDim2.new(1, 0, 0, 41), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+			slideConn = UserInputService.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					local p = input.Position
+					if not inRect(sidebarPanel, p.X, p.Y) and not inRect(selBtn, p.X, p.Y) then closeList() end
+				end
+			end)
+			activeDropdownClose = closeList
+			return
+		end
 		positionList()
-		if sidebarPanel then sidebarPanel.Visible = true end
 		listFrame.Visible = true
 		catcher.Visible = true
-		arrow.Text = "\u{25B2}"
 		posConn = RunService.RenderStepped:Connect(positionList)
 		activeDropdownClose = closeList
 	end
@@ -1890,9 +1901,11 @@ function Section:_buildDropdown(opts, multi)
 
 	-- SIDEBAR MODE build: dock the list to the right of the window + search box on top
 	if sidebarMode then
+		local mainFrame = (self._window and self._window._main) or gui
 		sidebarPanel = create("Frame", {
-			Name = "DropSidebar", Parent = gui, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
-			Size = UDim2.fromOffset(220, 300), Visible = false, ZIndex = 301, ClipsDescendants = true,
+			Name = "DropSidebar", Parent = mainFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, sidebarW, 0, 41),
+			Size = UDim2.new(0, sidebarW, 1, -41), Visible = false, ZIndex = 50, ClipsDescendants = true,
 		})
 		corner(sidebarPanel, RADIUS_LARGE)
 		stroke(sidebarPanel, self._theme.Border, 1)
