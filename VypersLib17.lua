@@ -710,6 +710,8 @@ function Vypers:CreateWindow(opts)
 	self_win._tabs    = {}
 	self_win._activeTab = nil
 	self_win._minSize = minSize
+	self_win._titleHolder = titleHolder
+	self_win._tagOrder = 10
 
 	-- DRAG --------------------------------------------------------------
 	do
@@ -820,6 +822,48 @@ end
 function Window:Notify(o) return self._vypers:Notify(o) end
 function Window:Dialog(o) return self._vypers:Dialog(o) end
 function Window:Popup(o) return self._vypers:Popup(o) end
+
+-- Window:Tag -> a small colored pill in the title bar, next to the title/version.
+-- opts = { Title, Icon, Color = Color3, Radius = 0..13 }
+function Window:Tag(opts)
+	opts = opts or {}
+	local theme = self._vypers._theme
+	local holder = self._titleHolder
+	if not holder then return nil end
+	self._tagOrder = (self._tagOrder or 10) + 1
+
+	local color = opts.Color or theme.Accent
+	-- readable text color based on pill luminance
+	local lum = 0.299 * color.R + 0.587 * color.G + 0.114 * color.B
+	local textColor = (lum > 0.6) and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(255, 255, 255)
+
+	local ri = resolveIcon(opts.Icon)
+	local prefix = (ri and ri.glyph) and (ri.glyph .. " ") or ""
+
+	local pill = create("TextLabel", {
+		Parent = holder, BackgroundColor3 = color, BorderSizePixel = 0, Font = FONT_TITLE,
+		Text = prefix .. (opts.Title or "Tag"), TextColor3 = textColor, TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center,
+		AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.new(0, 0, 0, 18), LayoutOrder = self._tagOrder,
+	})
+	local rad = opts.Radius
+	if rad == nil then rad = 9 end
+	corner(pill, rad)
+	create("UIPadding", { Parent = pill, PaddingLeft = UDim.new(0, ri and ri.image and 20 or 8), PaddingRight = UDim.new(0, 8) })
+	if ri and ri.image then
+		create("ImageLabel", {
+			Parent = pill, BackgroundTransparency = 1, Image = ri.image, AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 4, 0.5, 0), Size = UDim2.fromOffset(12, 12), ZIndex = 2,
+		})
+	end
+
+	return {
+		Type = "Tag", Instance = pill,
+		SetTitle = function(t) pill.Text = prefix .. tostring(t) end,
+		SetColor = function(c) pill.BackgroundColor3 = c end,
+		Destroy = function() pill:Destroy() end,
+	}
+end
 
 -- =====================================================================
 --  TAB
