@@ -589,7 +589,7 @@ function Vypers:CreateWindow(opts)
 	})
 	create("UIListLayout", { Parent = sidebar, FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder })
-	create("UIPadding", { Parent = sidebar, PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+	create("UIPadding", { Parent = sidebar, PaddingTop = UDim.new(0, PADDING), PaddingBottom = UDim.new(0, PADDING),
 		PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) })
 
 	create("Frame", { -- vertical separator
@@ -601,6 +601,12 @@ function Vypers:CreateWindow(opts)
 	local content = create("Frame", {
 		Name = "Content", Parent = main, BackgroundTransparency = 1,
 		Position = UDim2.new(0, SIDEBAR_W + 1, 0, 40), Size = UDim2.new(1, -(SIDEBAR_W + 1), 1, -40),
+	})
+
+	create("Frame", { -- horizontal separator under the title bar (crisp divider so
+		-- the body never looks like it merges/overlaps with the title bar)
+		Parent = main, BackgroundColor3 = self._theme.Border, BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0, 40), Size = UDim2.new(1, 0, 0, 1), ZIndex = 3,
 	})
 
 	-- ---- resize handle -----------------------------------------------
