@@ -1618,6 +1618,12 @@ function Section:_buildDropdown(opts, multi)
 	local values = opts.Values or {}
 	local gui = self._vypers:_ensureGui()
 
+	-- SIDEBAR MODE state (opts.Sidebar = true): render the option list as a panel
+	-- docked to the right of the window with a search box, instead of an overlay.
+	local sidebarMode = opts.Sidebar == true
+	local searchQuery = ""
+	local sidebarPanel, searchBox
+
 	-- AllowNone: single-select defaults to REQUIRING a choice; multi defaults to
 	-- allowing an empty selection. Override with opts.AllowNone.
 	local allowNone = (multi and (opts.AllowNone ~= false)) or (opts.AllowNone == true)
@@ -1736,6 +1742,19 @@ function Section:_buildDropdown(opts, multi)
 	local open = false
 	local posConn
 	local function positionList()
+		if sidebarMode then
+			local win = self._window
+			local mainFrame = win and win._main
+			if mainFrame and sidebarPanel then
+				local gap = 8
+				local vpX = gui.AbsoluteSize.X
+				local px = mainFrame.AbsolutePosition.X + mainFrame.AbsoluteSize.X + gap
+				if px + 220 > vpX then px = mainFrame.AbsolutePosition.X - 220 - gap end
+				sidebarPanel.Position = UDim2.fromOffset(px, mainFrame.AbsolutePosition.Y)
+				sidebarPanel.Size = UDim2.fromOffset(220, mainFrame.AbsoluteSize.Y)
+			end
+			return
+		end
 		listFrame.Position = UDim2.fromOffset(selBtn.AbsolutePosition.X, selBtn.AbsolutePosition.Y + selBtn.AbsoluteSize.Y + 2)
 		listFrame.Size = UDim2.fromOffset(selBtn.AbsoluteSize.X, math.min(contentHeight, MAX_H))
 	end
@@ -1743,6 +1762,7 @@ function Section:_buildDropdown(opts, multi)
 		open = false
 		listFrame.Visible = false
 		catcher.Visible = false
+		if sidebarPanel then sidebarPanel.Visible = false end
 		arrow.Text = "\u{25BC}"
 		if posConn then posConn:Disconnect(); posConn = nil end
 		if activeDropdownClose == closeList then activeDropdownClose = nil end
@@ -1751,6 +1771,7 @@ function Section:_buildDropdown(opts, multi)
 		if activeDropdownClose and activeDropdownClose ~= closeList then activeDropdownClose() end
 		open = true
 		positionList()
+		if sidebarPanel then sidebarPanel.Visible = true end
 		listFrame.Visible = true
 		catcher.Visible = true
 		arrow.Text = "\u{25B2}"
@@ -1766,7 +1787,11 @@ function Section:_buildDropdown(opts, multi)
 		optionButtons = {}
 		contentHeight = 0
 		for i, entry in ipairs(entries) do
-			if entry.divider then
+			local hidden = sidebarMode and searchQuery ~= "" and not entry.divider
+				and not string.find(string.lower(entry.title or ""), searchQuery, 1, true)
+			if hidden then
+				-- filtered out by the search box; skip rendering this entry
+			elseif entry.divider then
 				local dh = entry.title and 24 or 9
 				local dframe = create("Frame", {
 					Parent = listFrame, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
@@ -1862,6 +1887,49 @@ function Section:_buildDropdown(opts, multi)
 		if open then positionList() end
 	end
 	rebuild()
+
+	-- SIDEBAR MODE build: dock the list to the right of the window + search box on top
+	if sidebarMode then
+		sidebarPanel = create("Frame", {
+			Name = "DropSidebar", Parent = gui, BackgroundColor3 = self._theme.Surface, BorderSizePixel = 0,
+			Size = UDim2.fromOffset(220, 300), Visible = false, ZIndex = 301, ClipsDescendants = true,
+		})
+		corner(sidebarPanel, RADIUS_LARGE)
+		stroke(sidebarPanel, self._theme.Border, 1)
+		create("TextLabel", {
+			Parent = sidebarPanel, BackgroundTransparency = 1, Font = FONT_TITLE,
+			Text = opts.Title or (multi and "Multi Select" or "Select"),
+			TextColor3 = self._theme.Text, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
+			Position = UDim2.new(0, 12, 0, 10), Size = UDim2.new(1, -24, 0, 16), ZIndex = 302,
+		})
+		local searchHolder = create("Frame", {
+			Parent = sidebarPanel, BackgroundColor3 = self._theme.Background, BorderSizePixel = 0,
+			Position = UDim2.new(0, 10, 0, 34), Size = UDim2.new(1, -20, 0, 28), ZIndex = 302,
+		})
+		corner(searchHolder, RADIUS_SMALL)
+		stroke(searchHolder, self._theme.Border, 1)
+		create("TextLabel", {
+			Parent = searchHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = "\u{1F50D}",
+			TextColor3 = self._theme.TextMuted, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Center,
+			Position = UDim2.new(0, 6, 0, 0), Size = UDim2.fromOffset(18, 28), ZIndex = 303,
+		})
+		searchBox = create("TextBox", {
+			Parent = searchHolder, BackgroundTransparency = 1, Font = FONT_VALUE, Text = "",
+			PlaceholderText = "Search...", PlaceholderColor3 = self._theme.TextMuted,
+			TextColor3 = self._theme.Text, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+			ClearTextOnFocus = false, ClipsDescendants = true,
+			Position = UDim2.new(0, 28, 0, 0), Size = UDim2.new(1, -36, 1, 0), ZIndex = 303,
+		})
+		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			searchQuery = string.lower(searchBox.Text)
+			rebuild()
+		end)
+		-- dock the option list under the search box, filling the rest of the panel
+		listFrame.Parent = sidebarPanel
+		listFrame.Position = UDim2.new(0, 10, 0, 70)
+		listFrame.Size = UDim2.new(1, -20, 1, -80)
+		listFrame.ZIndex = 302
+	end
 
 	selBtn.MouseButton1Click:Connect(function()
 		if open then closeList() else openList() end
