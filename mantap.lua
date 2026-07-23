@@ -338,25 +338,31 @@ function Vypers:Notify(opts)
 	})
 	corner(card, RADIUS_LARGE)
 	stroke(card, theme.Border, 1)
-	create("Frame", { -- accent stripe
+	create("Frame", { -- accent stripe (overlay; kept OUT of the layout flow)
 		Parent = card, BackgroundColor3 = typeColor, BorderSizePixel = 0,
-		Size = UDim2.new(0, 3, 1, 0), ZIndex = 502,
+		Size = UDim2.new(0, 3, 1, 0), ZIndex = 503,
+	})
+	-- text lives in its own body frame so the scale-height stripe never feeds
+	-- back into the card's AutomaticSize (that feedback loop made the toast huge)
+	local body = create("Frame", {
+		Parent = card, BackgroundTransparency = 1, ZIndex = 502,
+		Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(1, -22, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 	})
 	create("UIPadding", {
-		Parent = card,
+		Parent = body,
 		PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
-		PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 10),
 	})
-	create("UIListLayout", { Parent = card, Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder })
+	create("UIListLayout", { Parent = body, Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder })
 	create("TextLabel", {
-		Parent = card, BackgroundTransparency = 1, Font = FONT_TITLE,
+		Parent = body, BackgroundTransparency = 1, Font = FONT_TITLE,
 		Text = opts.Title or "Notification", TextColor3 = theme.Text, TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 16),
 		LayoutOrder = 1, ZIndex = 502,
 	})
 	if opts.Content then
 		create("TextLabel", {
-			Parent = card, BackgroundTransparency = 1, Font = FONT_VALUE,
+			Parent = body, BackgroundTransparency = 1, Font = FONT_VALUE,
 			Text = opts.Content, TextColor3 = theme.TextDim, TextSize = 12,
 			TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
 			Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
