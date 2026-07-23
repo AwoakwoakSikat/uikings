@@ -390,41 +390,42 @@ function Vypers:CreateWindow(opts)
 	local closeBtn = makeCtrlButton("\u{2715}", -30, Color3.fromRGB(200, 60, 60))
 	local minBtn   = makeCtrlButton("\u{2013}", -60, self._theme.SurfaceHover)
 
-	-- ---- tab bar (horizontal, scrollable) ----------------------------
-	local tabBar = create("ScrollingFrame", {
-		Name = "TabBar",
+	-- ---- sidebar (vertical, scrollable) — holds the tabs -------------
+	local SIDEBAR_W = 150
+	local sidebar = create("ScrollingFrame", {
+		Name = "Sidebar",
 		Parent = main,
-		BackgroundColor3 = self._theme.Background,
+		BackgroundColor3 = self._theme.Surface,
 		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 40),
-		Size = UDim2.new(1, 0, 0, 36),
+		Size = UDim2.new(0, SIDEBAR_W, 1, -40),
 		ScrollBarThickness = 3,
 		ScrollBarImageColor3 = self._theme.Border,
-		ScrollingDirection = Enum.ScrollingDirection.X,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
-		AutomaticCanvasSize = Enum.AutomaticSize.X,
-		HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	})
 	create("UIListLayout", {
-		Parent = tabBar,
-		FillDirection = Enum.FillDirection.Horizontal,
+		Parent = sidebar,
+		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
 	})
 	create("UIPadding", {
-		Parent = tabBar,
+		Parent = sidebar,
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
 		PaddingLeft = UDim.new(0, 8),
 		PaddingRight = UDim.new(0, 8),
 	})
 
-	-- separator under tab bar
+	-- vertical separator between sidebar and content
 	create("Frame", {
 		Parent = main,
 		BackgroundColor3 = self._theme.Border,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0, 0, 0, 76),
-		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.new(0, SIDEBAR_W, 0, 40),
+		Size = UDim2.new(0, 1, 1, -40),
 	})
 
 	-- ---- content holder (per-tab pages live here) --------------------
@@ -432,8 +433,8 @@ function Vypers:CreateWindow(opts)
 		Name = "Content",
 		Parent = main,
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 0, 0, 77),
-		Size = UDim2.new(1, 0, 1, -77),
+		Position = UDim2.new(0, SIDEBAR_W + 1, 0, 40),
+		Size = UDim2.new(1, -(SIDEBAR_W + 1), 1, -40),
 	})
 
 	-- ---- resize handle (bottom-right) --------------------------------
@@ -459,7 +460,7 @@ function Vypers:CreateWindow(opts)
 	self_win._gui     = gui
 	self_win._main    = main
 	self_win._content = content
-	self_win._tabBar  = tabBar
+	self_win._sidebar = sidebar
 	self_win._tabs    = {}
 	self_win._activeTab = nil
 	self_win._minSize = minSize
@@ -621,22 +622,22 @@ function Window:CreateTab(opts)
 
 	local btn = create("TextButton", {
 		Name = "Tab_" .. title,
-		Parent = self._tabBar,
+		Parent = self._sidebar,
 		BackgroundColor3 = theme.Surface,
 		BorderSizePixel = 0,
 		Text = iconText .. title,
 		Font = FONT_TITLE,
 		TextColor3 = theme.TextDim,
 		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
 		AutoButtonColor = false,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.new(0, 0, 0, 26),
+		Size = UDim2.new(1, 0, 0, 30),
 	})
 	corner(btn, RADIUS_SMALL)
 	create("UIPadding", {
 		Parent = btn,
 		PaddingLeft = UDim.new(0, 12),
-		PaddingRight = UDim.new(0, 12),
+		PaddingRight = UDim.new(0, 10),
 	})
 
 	-- content page for this tab (scrolling)
