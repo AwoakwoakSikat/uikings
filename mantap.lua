@@ -52,6 +52,8 @@ local PADDING      = 8
 local ELEMENT_H    = 34 -- default element height
 local HEADER_H     = 32 -- section header height
 
+local WINDOW_TRANSPARENCY = 0.85 -- 85% transparent window background (glass look)
+
 -- =====================================================================
 --  SIMPLE ICON SET (unicode glyphs -- no external image dependencies)
 -- =====================================================================
@@ -313,6 +315,7 @@ function Vypers:CreateWindow(opts)
 		Name = "Window",
 		Parent = gui,
 		BackgroundColor3 = self._theme.Background,
+		BackgroundTransparency = WINDOW_TRANSPARENCY,
 		BorderSizePixel = 0,
 		Size = UDim2.fromOffset(size.X, size.Y),
 		Position = UDim2.new(0.5, -size.X/2, 0.5, -size.Y/2),
@@ -1215,58 +1218,66 @@ end
 -- =====================================================================
 --  ELEMENT: DROPDOWN (single or multi select)
 -- =====================================================================
-function Section:CreateDropdown(opts)
+-- Internal builder shared by single and multi dropdowns.
+function Section:_buildDropdown(opts, multi)
 	opts = opts or {}
 	local callback = opts.Callback or function() end
 	local values = opts.Values or {}
-	local multi = opts.Multi and true or false
 
-	-- selection state
+	-- selection state (set keyed by value)
 	local selected = {}
 	if multi then
 		if type(opts.Default) == "table" then
 			for _, v in ipairs(opts.Default) do selected[v] = true end
+		elseif opts.Default ~= nil then
+			selected[opts.Default] = true
 		end
 	else
 		if opts.Default ~= nil then selected[opts.Default] = true end
 	end
 
-	local function selectionText()
+	local function orderedSelection()
 		local list = {}
 		for _, v in ipairs(values) do
 			if selected[v] then table.insert(list, v) end
 		end
+		return list
+	end
+
+	local function selectionText()
+		local list = orderedSelection()
 		if #list == 0 then return "None" end
+		if multi and #list > 2 then
+			return tostring(#list) .. " selected"
+		end
 		return table.concat(list, ", ")
 	end
 
 	local function selectionValue()
 		if multi then
-			local list = {}
-			for _, v in ipairs(values) do
-				if selected[v] then table.insert(list, v) end
-			end
-			return list
+			return orderedSelection()
 		else
-			for _, v in ipairs(values) do
-				if selected[v] then return v end
-			end
-			return nil
+			return orderedSelection()[1]
 		end
 	end
 
-	local row = self:_row(ELEMENT_H)
-	row.ClipsDescendants = false -- allow list to overflow visually
+	local ROW_H = ELEMENT_H
+	local OPT_H = 26
+	local MAX_VISIBLE = 5
+
+	local row = self:_row(ROW_H)
+	row.ClipsDescendants = false -- allow the list to overflow visually
+
 	create("TextLabel", {
 		Parent = row,
 		BackgroundTransparency = 1,
 		Font = FONT_VALUE,
-		Text = opts.Title or "Dropdown",
+		Text = opts.Title or (multi and "Multi Dropdown" or "Dropdown"),
 		TextColor3 = self._theme.Text,
 		TextSize = 13,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Position = UDim2.new(0, 10, 0, 0),
-		Size = UDim2.new(0.4, -10, 1, 0),
+		Size = UDim2.new(0.4, -10, 0, ROW_H),
 	})
 
 	local selBtn = create("TextButton", {
@@ -1280,12 +1291,14 @@ function Section:CreateDropdown(opts)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		AutoButtonColor = false,
-		Position = UDim2.new(0.4, 4, 0.5, -12),
+		Position = UDim2.new(0.4, 4, 0, (ROW_H - 24) / 2),
 		Size = UDim2.new(0.6, -14, 0, 24),
 	})
 	corner(selBtn, RADIUS_SMALL)
 	stroke(selBtn, self._theme.Border, 1)
-	create("TextLabel", {
+	addHover(selBtn, self._theme.Background, self._theme.SurfaceHover)
+
+	local arrow = create("TextLabel", {
 		Parent = selBtn,
 		BackgroundTransparency = 1,
 		Font = FONT_TITLE,
@@ -1296,20 +1309,25 @@ function Section:CreateDropdown(opts)
 		Size = UDim2.fromOffset(16, 24),
 	})
 
-	-- dropdown list (expands the row height when open)
-	local listFrame = create("Frame", {
+	-- dropdown list (scrolls when there are many options)
+	local listFrame = create("ScrollingFrame", {
 		Parent = row,
 		BackgroundColor3 = self._theme.Background,
 		BorderSizePixel = 0,
-		Position = UDim2.new(0.4, 4, 1, 2),
+		Position = UDim2.new(0.4, 4, 0, ROW_H + 2),
 		Size = UDim2.new(0.6, -14, 0, 0),
 		Visible = false,
 		ZIndex = 10,
 		ClipsDescendants = true,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = self._theme.Border,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	})
 	corner(listFrame, RADIUS_SMALL)
 	stroke(listFrame, self._theme.Border, 1)
-	local listLayout = create("UIListLayout", {
+	create("UIListLayout", {
 		Parent = listFrame,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
@@ -1318,8 +1336,11 @@ function Section:CreateDropdown(opts)
 	local function refresh()
 		selBtn.Text = "  " .. selectionText()
 		for v, b in pairs(optionButtons) do
-			b.BackgroundColor3 = selected[v] and self._theme.Accent or self._theme.Background
-			b.TextColor3 = selected[v] and Color3.fromRGB(255,255,255) or self._theme.TextDim
+			local isSel = selected[v] and true or false
+			b.BackgroundColor3 = isSel and self._theme.Accent or self._theme.Background
+			b.TextColor3 = isSel and Color3.fromRGB(255, 255, 255) or self._theme.TextDim
+			local check = b:FindFirstChild("Check")
+			if check then check.Text = isSel and "\u{2713}" or "" end
 		end
 	end
 
@@ -1327,12 +1348,14 @@ function Section:CreateDropdown(opts)
 	local function setOpen(v)
 		open = v
 		listFrame.Visible = open
+		arrow.Text = open and "\u{25B2}" or "\u{25BC}"
+		local shown = math.min(#values, MAX_VISIBLE)
 		if open then
-			listFrame.Size = UDim2.new(0.6, -14, 0, math.min(#values, 6) * 26)
-			row.Size = UDim2.new(1, 0, 0, ELEMENT_H + math.min(#values, 6) * 26 + 4)
+			listFrame.Size = UDim2.new(0.6, -14, 0, shown * OPT_H)
+			row.Size = UDim2.new(1, 0, 0, ROW_H + shown * OPT_H + 4)
 		else
 			listFrame.Size = UDim2.new(0.6, -14, 0, 0)
-			row.Size = UDim2.new(1, 0, 0, ELEMENT_H)
+			row.Size = UDim2.new(1, 0, 0, ROW_H)
 		end
 	end
 
@@ -1347,14 +1370,28 @@ function Section:CreateDropdown(opts)
 			TextSize = 12,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			AutoButtonColor = false,
-			Size = UDim2.new(1, 0, 0, 26),
+			Size = UDim2.new(1, 0, 0, OPT_H),
 			LayoutOrder = i,
 			ZIndex = 11,
 		})
+		if multi then
+			create("TextLabel", {
+				Name = "Check",
+				Parent = ob,
+				BackgroundTransparency = 1,
+				Font = FONT_TITLE,
+				Text = selected[v] and "\u{2713}" or "",
+				TextColor3 = Color3.fromRGB(255, 255, 255),
+				TextSize = 12,
+				Position = UDim2.new(1, -20, 0, 0),
+				Size = UDim2.fromOffset(16, OPT_H),
+				ZIndex = 12,
+			})
+		end
 		optionButtons[v] = ob
 		ob.MouseButton1Click:Connect(function()
 			if multi then
-				selected[v] = not selected[v] or nil
+				if selected[v] then selected[v] = nil else selected[v] = true end
 			else
 				selected = { [v] = true }
 				setOpen(false)
@@ -1375,9 +1412,10 @@ function Section:CreateDropdown(opts)
 	refresh()
 
 	local handle = {
-		Type = "Dropdown",
+		Type = multi and "MultiDropdown" or "Dropdown",
 		Id = opts.Id,
 		Instance = row,
+		Multi = multi,
 		Get = function() return selectionValue() end,
 		Set = function(v)
 			selected = {}
@@ -1389,13 +1427,24 @@ function Section:CreateDropdown(opts)
 			refresh()
 		end,
 		Refresh = function(newValues)
-			-- (optional) replace value list
 			values = newValues or values
 		end,
 	}
 	registerElement(opts.Id, handle)
 	pcall(callback, selectionValue())
 	return handle
+end
+
+-- Single-select dropdown (selecting an option closes the list).
+function Section:CreateDropdown(opts)
+	opts = opts or {}
+	-- backward compatible: opts.Multi = true still yields a multi dropdown
+	return self:_buildDropdown(opts, opts.Multi and true or false)
+end
+
+-- Multi-select dropdown (toggle options, list stays open, shows checkmarks).
+function Section:CreateMultiDropdown(opts)
+	return self:_buildDropdown(opts, true)
 end
 
 -- =====================================================================
@@ -1649,13 +1698,24 @@ Combat:CreateButton({
     Callback = function() print("Executed!") end,
 })
 
+-- Single-select dropdown (returns one value)
 Combat:CreateDropdown({
     Id = "mode",
     Title = "Select Mode",
     Values = { "Mode A", "Mode B", "Mode C" },
     Default = "Mode A",
-    Multi = false,
     Callback = function(value) print("Mode:", value) end,
+})
+
+-- Multi-select dropdown (returns a table of values)
+Combat:CreateMultiDropdown({
+    Id = "targets",
+    Title = "Target Parts",
+    Values = { "Head", "Torso", "HumanoidRootPart", "LeftArm", "RightArm" },
+    Default = { "Head", "Torso" },
+    Callback = function(list)
+        print("Selected:", table.concat(list, ", "))
+    end,
 })
 
 Combat:CreateInput({
