@@ -7,7 +7,7 @@
 ]]
 
 -- ====== LOAD LIBRARY (via raw GitHub) =========================
-local RAW_URL = "https://raw.githubusercontent.com/AwoakwoakSikat/uikings/refs/heads/main/VypersLib30.lua"
+local RAW_URL = "https://raw.githubusercontent.com/AwoakwoakSikat/uikings/refs/heads/main/VypersLib33.lua"
 local Vypers = loadstring(game:HttpGet(RAW_URL))()
 
 -- ====== SERVICES / STATE ======================================
@@ -37,23 +37,26 @@ Vypers:SetAccent(Color3.fromRGB(120, 90, 240))
 -- ====== BIKIN WINDOW ==========================================
 local Window = Vypers:CreateWindow({
     Title       = "King Vypers",
+    Icon        = "rbxassetid://139467646163013", -- logo pas window di-minimize
+    FloatIconRadius = 14,   -- sudut logo minimize: 0 = kotak tajam, 14 = squircle, 25 = bulat penuh
     Background   = "rbxassetid://97514324988224", -- gambar backdrop window
     SubTitle    = "v2.0",
+    Author      = "by Yeremia",
     Size = UDim2.new(0, 530, 0, 300),
     MinSize = Vector2.new(530, 300),
     MaxSize = Vector2.new(530, 300),
     SideBarWidth= 150,
     Resizable   = true,
-    Transparent = false,  -- efek glass (false = solid, transparansi mati)
+    Transparent = true,  -- efek glass (false = solid, transparansi mati)
 
     -- =========================================================
     --  ATUR TRANSPARANSI DI SINI  (0 = solid, 1 = ilang total)
     --  makin gede angkanya = makin tembus = gambar makin keliatan
     -- =========================================================
-    SurfaceTransparency = 0.2,   -- card tiap element (slider/toggle/button/dll)
+    SurfaceTransparency = 0.5,   -- card tiap element (slider/toggle/button/dll)
     SectionTransparency = 0.85,  -- panel/box section (Movement, Combat, dll)
     TabTransparency     = 0.4,   -- tombol tab di sidebar (Main, Player, dll)
-    Overlay             = 0.5,   -- tint gelap DI ATAS gambar (0 terang, 1 gelap)
+    Overlay             = 0.3,   -- tint gelap DI ATAS gambar (0 terang, 1 gelap)
 
     -- =========================================================
     --  ATUR WARNA BACKGROUND ITEM DI SINI
@@ -172,6 +175,22 @@ targeting:CreateDropdown({
     Sidebar = true,
     RefreshInterval = 2,
     Callback = function(v) Settings.TargetPlayer = v end,
+})
+
+-- MULTI-SELECT versi sidebar (bisa pilih banyak player sekaligus)
+-- ada tombol Select All / Clear di atas list, dan tetap kebuka pas milih.
+targeting:CreateMultiDropdown({
+    Id = "targetplayers", Title = "Target Players",
+    Values = playerNames(),
+    Refresh = playerNames,
+    Sidebar = true,            -- sidebar sekarang support multi!
+    RefreshInterval = 2,
+    Default = {},              -- boleh kosong (AllowNone default true di multi)
+    -- SelectAll = false,      -- set false kalau ga mau tombol Select All/Clear
+    Callback = function(list)
+        Settings.TargetPlayers = list
+        print("Target players:", table.concat(list, ", "))
+    end,
 })
 
 local visuals = playerTab:CreateSection({ Title = "Visuals" })
