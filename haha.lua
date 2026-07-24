@@ -7,7 +7,7 @@
 ]]
 
 -- ====== LOAD LIBRARY (via raw GitHub) =========================
-local RAW_URL = "https://raw.githubusercontent.com/AwoakwoakSikat/uikings/refs/heads/main/VypersLib29.lua"
+local RAW_URL = "https://raw.githubusercontent.com/AwoakwoakSikat/uikings/refs/heads/main/VypersLib30.lua"
 local Vypers = loadstring(game:HttpGet(RAW_URL))()
 
 -- ====== SERVICES / STATE ======================================
@@ -39,22 +39,33 @@ local Window = Vypers:CreateWindow({
     Title       = "King Vypers",
     Background   = "rbxassetid://97514324988224", -- gambar backdrop window
     SubTitle    = "v2.0",
-    Author      = "by Yeremia",
     Size = UDim2.new(0, 530, 0, 300),
     MinSize = Vector2.new(530, 300),
     MaxSize = Vector2.new(530, 300),
     SideBarWidth= 150,
     Resizable   = true,
-    Transparent = true,  -- efek glass (false = solid, transparansi mati)
+    Transparent = false,  -- efek glass (false = solid, transparansi mati)
 
     -- =========================================================
     --  ATUR TRANSPARANSI DI SINI  (0 = solid, 1 = ilang total)
     --  makin gede angkanya = makin tembus = gambar makin keliatan
     -- =========================================================
-    SurfaceTransparency = 0.1,   -- card tiap element (slider/toggle/button/dll)
-    SectionTransparency = 0.3,  -- panel/box section (Movement, Combat, dll)
-    TabTransparency     = 0.3,   -- tombol tab di sidebar (Main, Player, dll)
-    Overlay             = 0.8,   -- tint gelap DI ATAS gambar (0 terang, 1 gelap)
+    SurfaceTransparency = 0.2,   -- card tiap element (slider/toggle/button/dll)
+    SectionTransparency = 0.85,  -- panel/box section (Movement, Combat, dll)
+    TabTransparency     = 0.4,   -- tombol tab di sidebar (Main, Player, dll)
+    Overlay             = 0.5,   -- tint gelap DI ATAS gambar (0 terang, 1 gelap)
+
+    -- =========================================================
+    --  ATUR WARNA BACKGROUND ITEM DI SINI
+    --  (comment/hapus yang ga dipakai kalau mau warna default)
+    -- =========================================================
+    ItemColor    = Color3.fromRGB(40, 40, 60),   -- card tiap element
+    SectionColor = Color3.fromRGB(28, 28, 44),   -- panel section + title bar
+    TabColor     = Color3.fromRGB(34, 34, 52),   -- tombol tab sidebar
+    WindowColor  = Color3.fromRGB(20, 20, 30),   -- warna dasar window
+    Accent       = Color3.fromRGB(120, 90, 240), -- warna aksen (tab aktif)
+    -- Atau override penuh sekaligus:
+    -- Theme = { Surface = ..., SurfaceLight = ..., Border = ..., Text = ... },
 
     ToggleKey   = Enum.KeyCode.RightShift,
     Folder      = "VypersDemo",
