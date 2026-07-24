@@ -45,12 +45,12 @@ local Window = Vypers:CreateWindow({
     MaxSize         = Vector2.new(720, 480),             -- batas maksimal resize
     SideBarWidth    = 150,                               -- lebar sidebar tab
     Resizable       = true,                              -- boleh di-resize (pojok kanan bawah)
-    Transparent     = true,                              -- mode glass (nyalain transparansi default)
+    Transparent     = false,                              -- mode glass (nyalain transparansi default)
 
     -- --- transparansi tiap layer (0 = solid .. 1 = ilang total) ---
-    SurfaceTransparency = 0.5,   -- card tiap element
-    SectionTransparency = 0.85,  -- panel section
-    TabTransparency     = 0.4,   -- tombol tab sidebar
+    SurfaceTransparency = 0.3,   -- card tiap element
+    SectionTransparency = 0.3,  -- panel section
+    TabTransparency     = 0.3,   -- tombol tab sidebar
 
     -- --- warna background item ---
     ItemColor    = Color3.fromRGB(40, 40, 60),   -- card element
